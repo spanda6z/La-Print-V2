@@ -2,7 +2,7 @@ import "dotenv/config";
 import { Bot, Context, InlineKeyboard, session } from "grammy";
 import pg from "pg";
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
-import { Keypair } from "@solana/web3.js";
+import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 import bs58 from "bs58";
 
 const { Pool } = pg;
@@ -185,6 +185,13 @@ async function patch(id:number, fields:Record<string,unknown>) {
   return user(id);
 }
 async function once(id:number,key:string) {
+async function readSolBalance(address:string):Promise<number>{
+  const endpoint=process.env.SOLANA_RPC_URL;
+  if(!endpoint) throw new Error("SOLANA_RPC_URL is not configured");
+  const connection=new Connection(endpoint,{commitment:"confirmed"});
+  const lamports=await connection.getBalance(new PublicKey(address),"confirmed");
+  return lamports/LAMPORTS_PER_SOL;
+}
   const r=await pool.query("INSERT INTO public.notification_events(telegram_id,event_key) VALUES($1,$2) ON CONFLICT DO NOTHING",[id,key]); return r.rowCount===1;
 }
 
@@ -222,7 +229,11 @@ bot.callbackQuery(/^sl:(.+)$/,async ctx=>{await ctx.answerCallbackQuery();const 
 
 bot.callbackQuery("setup:filters",async ctx=>{await ctx.answerCallbackQuery();await show(ctx,"🔎 *TOKEN FILTERS*\n\nOnly tokens that pass your filters can generate a trading call.\n\nA low market cap alone never qualifies a token.",{parse_mode:"Markdown",reply_markup:filterKb()});});
 bot.callbackQuery(/^filter:(pre|new|both)$/,async ctx=>{await ctx.answerCallbackQuery();await patch(ctx.from.id,{filters:{type:ctx.match[1],minMc:3000,maxMc:50000,minLiquidity:5000,minVolume5m:2000,minHolders:50,maxTop10:35,maxDev:5,minAgeSec:30,maxAgeMin:30,smart:true}});await show(ctx,"✅ *FILTERS SAVED*\n\nMC: $3K → $50K\nLiquidity: ≥ $5K\n5M Volume: ≥ $2K\nHolders: ≥ 50\nTop 10: ≤ 35%\nDev: ≤ 5%\nSmart filters: ON",{parse_mode:"Markdown",reply_markup:setupKb()});});
-bot.callbackQuery("filter:settings",async ctx=>{await ctx.answerCallbackQuery();await show(ctx,"🔎 *FILTER SETTINGS*\n\nCurrent smart defaults:\nMC $3K → $50K\nLiquidity ≥ $5K\n5M Volume ≥ $2K\nHolders ≥ 50\nTop 10 ≤ 35%\nDev ≤ 5%\nAge 30s → 30m",{parse_mode:"Markdown",reply_markup:filterKb()});});
+bot.callbackQuery("filter:settings",async ctx=>{
+  await ctx.answerCallbackQuery();
+  const u=await user(ctx.from.id,ctx.from.username);const f=u.filters||{};
+  await show(ctx,"🔎 *SAVED FILTER THRESHOLDS*\\n\\nMarket type: "+(f.type||"Not selected")+"\\nMarket cap: $"+(f.minMc??3000)+" – $"+(f.maxMc??50000)+"\\nLiquidity: ≥ $"+(f.minLiquidity??5000)+"\\n5M volume: ≥ $"+(f.minVolume5m??2000)+"\\nHolders: ≥ "+(f.minHolders??50)+"\\nTop 10: ≤ "+(f.maxTop10??35)+"%\\nDev: ≤ "+(f.maxDev??5)+"%\\nAge: "+(f.minAgeSec??30)+"s – "+(f.maxAgeMin??30)+"m\\nSmart filters: "+(f.smart===false?"OFF":"ON")+"\\n\\nThese are saved defaults. Individual threshold editing is not implemented yet.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🧠 SMART FILTERS","filter:smart").row().text("⬅️ BACK","setup:filters").text("🏠 MAIN MENU","menu")});
+});
 bot.callbackQuery("filter:smart",async ctx=>{await ctx.answerCallbackQuery();await patch(ctx.from.id,{filters:{type:"both",minMc:3000,maxMc:50000,minLiquidity:5000,minVolume5m:2000,minHolders:50,maxTop10:35,maxDev:5,minAgeSec:30,maxAgeMin:30,smart:true}});await show(ctx,"🧠 *SMART FILTERS ON*\n\nLiquidity, volume, holder distribution, concentration, dev exposure and safety checks must pass before a token qualifies.",{parse_mode:"Markdown",reply_markup:filterKb()});});
 
 bot.callbackQuery(/^alert:(new|liq|vol|bond)$/,async ctx=>{await ctx.answerCallbackQuery();const u=await user(ctx.from.id,ctx.from.username);const old=u.alerts||{};const key=({new:"newToken",liq:"liquidity",vol:"volume",bond:"bonding"} as Record<string,string>)[ctx.match[1]];const next={...old,milestones:true,[key]:!old[key]};await patch(ctx.from.id,{alerts:next});const k=new InlineKeyboard().text((next.newToken?"☑":"☐")+" NEW TOKEN","alert:new").text((next.liquidity?"☑":"☐")+" LIQUIDITY","alert:liq").row().text((next.volume?"☑":"☐")+" VOLUME","alert:vol").text((next.bonding?"☑":"☐")+" BONDING","alert:bond").row().text("💾 SAVE","alert:save").row().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu");await show(ctx,"🔔 *OPTIONAL ALERTS*\n\nTrade milestones: ALWAYS ON\nTap an option to toggle it. Your selection is saved immediately.",{parse_mode:"Markdown",reply_markup:k});});
@@ -238,7 +249,7 @@ bot.callbackQuery("wallet",async ctx=>{
   ctx.session.input=undefined;
   const result=await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[ctx.from.id]);
   if(!result.rowCount) return show(ctx,"💰 *YOUR TRADING WALLET*\n\nNo wallet has been created or imported yet.\n\nChoose an option below.",{parse_mode:"Markdown",reply_markup:walletKb("menu")});
-  return show(ctx,"💰 *YOUR TRADING WALLET*\n\nStatus: WALLET READY\nAddress: \x60"+result.rows[0].public_key+"\x60\n\nBalance: unavailable — live Solana RPC balance lookup is not connected yet.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔐 BACK UP WALLET","wallet:backup").row().text("🔄 REFRESH","wallet:refresh").row().text("↩️ RETURN TO MAIN MENU","menu")});
+  return show(ctx,"💰 *YOUR TRADING WALLET*\n\nStatus: WALLET CREATED\nAddress: \x60"+result.rows[0].public_key+"\x60\n\nBalance: unavailable — live Solana RPC balance lookup is not connected yet.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔐 BACK UP WALLET","wallet:backup").row().text("🔄 REFRESH","wallet:refresh").row().text("↩️ RETURN TO MAIN MENU","menu")});
 });
 bot.callbackQuery("wallet:setup",async ctx=>{await ctx.answerCallbackQuery();ctx.session.walletReturnTo="setup";ctx.session.input=undefined;const result=await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[ctx.from.id]);if(!result.rowCount)return show(ctx,"💰 *WALLET*\n\nCreate or import your trading wallet. Live balance verification is not connected yet.",{parse_mode:"Markdown",reply_markup:walletKb("setup")});return show(ctx,"💰 *WALLET*\n\nAddress: `"+result.rows[0].public_key+"`\nBalance: unavailable — live RPC lookup is not connected.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔐 BACK UP","wallet:backup").row().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu")});});
 bot.callbackQuery("wallet:create",async ctx=>{
@@ -277,12 +288,45 @@ bot.callbackQuery("wallet:copy",async ctx=>{
   return show(ctx,"📋 Wallet address:\n\x60"+result.rows[0].public_key+"\x60",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("↩️ RETURN","wallet")});
 });
 bot.callbackQuery("wallet:refresh",async ctx=>{
+  await ctx.answerCallbackQuery("Checking Solana balance…");
+  const result=await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[ctx.from.id]);
+  if(!result.rowCount) return show(ctx,"No wallet has been created or imported yet.",{reply_markup:walletKb(ctx.session.walletReturnTo==="setup"?"setup":"menu")});
+  try{
+    const balance=await readSolBalance(result.rows[0].public_key);
+    await patch(ctx.from.id,{wallet_balance:balance});
+    const target=ctx.session.walletReturnTo==="setup"?"setup":"menu";
+    return show(ctx,"💰 *YOUR TRADING WALLET*\\n\\nStatus: "+(balance>0?"FUNDED":"CREATED — NO SOL")+"\\nAddress: \\x60"+result.rows[0].public_key+"\\x60\\nBalance: *"+balance.toFixed(6)+" SOL*\\n\\nBalance checked from Solana RPC.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔐 BACK UP WALLET","wallet:backup").row().text("🔄 REFRESH","wallet:refresh").row().text("⬅️ BACK",target).text("🏠 MAIN MENU","menu")});
+  }catch(error){
+    console.error("[wallet] balance refresh failed",(error as any)?.message||error);
+    return show(ctx,"⚠️ *BALANCE CHECK FAILED*\\n\\nSolana RPC did not return a verified balance. Check the RPC endpoint and try again. No balance has been assumed.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔄 TRY AGAIN","wallet:refresh").row().text("⬅️ BACK",ctx.session.walletReturnTo==="setup"?"setup":"menu").text("🏠 MAIN MENU","menu")});
+  }
+});
   await ctx.answerCallbackQuery();
   const result=await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[ctx.from.id]);
   if(!result.rowCount) return show(ctx,"No wallet has been created or imported yet.",{reply_markup:walletKb(ctx.session.walletReturnTo==="setup"?"setup":"menu")});
   return show(ctx,"💰 *YOUR TRADING WALLET*\n\nAddress: \x60"+result.rows[0].public_key+"\x60\n\nBalance unavailable: live RPC balance lookup is not connected.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔐 BACK UP WALLET","wallet:backup").row().text("↩️ RETURN","menu")});
 });
-bot.callbackQuery("review",async ctx=>{await ctx.answerCallbackQuery();const u=await user(ctx.from.id,ctx.from.username);const missing:string[]=[];if(!u.buy_amount)missing.push("Buy Amount");if(!u.tp_config)missing.push("Take Profit");if(!u.sl_percent)missing.push("Stop Loss");if(!u.filters)missing.push("Filters");if(!u.alerts)missing.push("Alerts");if(Number(u.wallet_balance||0)<=0)missing.push("Funded Wallet");const txt=missing.length?"⚠️ *SETUP INCOMPLETE*\n\nMissing:\n"+missing.map(x=>"❌ "+x).join("\n"):"🎯 *FINAL REVIEW*\n\n💰 Buy: "+u.buy_amount+" SOL\n🎯 TP: configured\n🛑 SL: "+u.sl_percent+"%\n🔎 Filters: smart\n🔔 Milestones: ON\n\nNothing executes until activation.";await show(ctx,txt,{parse_mode:"Markdown",reply_markup:missing.length?setupKb():new InlineKeyboard().text("🚀 ENABLE","activate").row().text("⚙️ EDIT","setup").text("🏠 MAIN MENU","menu")});});
+bot.callbackQuery("review",async ctx=>{
+  await ctx.answerCallbackQuery();
+  const u=await user(ctx.from.id,ctx.from.username);
+  const wallet=await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[ctx.from.id]);
+  const missing:string[]=[];
+  if(!u.buy_amount)missing.push("Buy Amount");
+  if(!u.tp_config)missing.push("Take Profit");
+  if(!u.sl_percent)missing.push("Stop Loss");
+  if(!u.filters)missing.push("Filters");
+  if(!u.alerts)missing.push("Alerts");
+  if(!wallet.rowCount)missing.push("Wallet");
+  let balanceLine="Wallet balance: NOT VERIFIED";
+  if(wallet.rowCount){
+    try{const balance=await readSolBalance(wallet.rows[0].public_key);await patch(ctx.from.id,{wallet_balance:balance});balanceLine="Wallet balance: "+balance.toFixed(6)+" SOL";if(balance<=0)missing.push("Funded Wallet");}
+    catch{missing.push("Verified wallet balance");}
+  }
+  const filters=u.filters||{};const tp=u.tp_config?.targets?.map((t:any)=>"+"+t.pct+"% sell "+t.sellPct+"%").join(", ")||"Not set";const alerts=u.alerts||{};
+  const optional=["newToken","liquidity","volume","bonding"].filter(k=>alerts[k]).join(", ")||"None";
+  const txt="🧾 *CONFIGURATION REVIEW*\\n\\n💰 Buy: "+(u.buy_amount||"Not set")+" SOL\\n🎯 Take Profit: "+tp+"\\n🛑 Stop Loss: "+(u.sl_percent??"Not set")+"%\\n🔎 Market: "+(filters.type||"Not set")+"\\nMC: $"+(filters.minMc??"—")+" – $"+(filters.maxMc??"—")+"\\nLiquidity: ≥ $"+(filters.minLiquidity??"—")+"\\n5M volume: ≥ $"+(filters.minVolume5m??"—")+"\\nHolders: ≥ "+(filters.minHolders??"—")+"\\nTop 10: ≤ "+(filters.maxTop10??"—")+"%\\nDev: ≤ "+(filters.maxDev??"—")+"%\\nSmart filters: "+(filters.smart===false?"OFF":"ON")+"\\n🔔 Mandatory trade alerts: ON\\nOptional alerts: "+optional+"\\n"+balanceLine+"\\n\\n"+(missing.length?"⚠️ *NOT READY*\\nMissing / unverified:\\n"+missing.map(x=>"❌ "+x).join("\\n")+"\\n\\n":"⚠️ *ENGINE NOT CONNECTED*\\n")+"No trading will start until scanner, safety and execution services are verified.";
+  await show(ctx,txt,{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("⚙️ EDIT SETTINGS","setup").row().text("🏠 MAIN MENU","menu")});
+});
 bot.callbackQuery("activate",async ctx=>{await ctx.answerCallbackQuery();const u=await user(ctx.from.id,ctx.from.username);const wallet=await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[ctx.from.id]);const missing:string[]=[];if(!u.buy_amount)missing.push("Buy Amount");if(!u.tp_config)missing.push("Take Profit");if(!u.sl_percent)missing.push("Stop Loss");if(!u.filters)missing.push("Filters");if(!u.alerts)missing.push("Alerts");if(!wallet.rowCount)missing.push("Wallet");if(missing.length)return show(ctx,"⚠️ *TRADING NOT READY*\n\n"+missing.map(x=>"❌ "+x).join("\n"),{parse_mode:"Markdown",reply_markup:setupKb()});return show(ctx,"⚠️ *TRADING NOT READY*\n\nYour settings are saved, but live Solana balance verification, scanner, safety evaluator and execution adapter are not connected and verified.\n\nNo trade has been started.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("⚙️ EDIT SETTINGS","setup").row().text("🏠 MAIN MENU","menu")});});
 bot.callbackQuery("trade:start",async ctx=>{await ctx.answerCallbackQuery();const u=await user(ctx.from.id,ctx.from.username);const wallet=await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[ctx.from.id]);const missing:string[]=[];if(!u.buy_amount)missing.push("Buy Amount");if(!u.tp_config)missing.push("Take Profit");if(!u.sl_percent)missing.push("Stop Loss");if(!u.filters)missing.push("Filters");if(!u.alerts)missing.push("Alerts");if(!wallet.rowCount)missing.push("Wallet");if(missing.length)return show(ctx,"⚠️ *TRADING NOT READY*\n\n"+missing.map(x=>"❌ "+x).join("\n"),{parse_mode:"Markdown",reply_markup:setupKb()});return show(ctx,"⚠️ *TRADING ENGINE UNAVAILABLE*\n\nYour wallet exists, but its live SOL balance has not been verified. The scanner, safety evaluator and execution adapter are also not connected.\n\nNo trade was started and no funding balance is being assumed.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("💰 WALLET","wallet").text("⚙️ TRADE SETUP","setup").row().text("🏠 MAIN MENU","menu")});});
 bot.callbackQuery("trade:stop",async ctx=>{await ctx.answerCallbackQuery();await show(ctx,"⏹️ *STOP TRADING?*\n\nNew entries will stop. Existing positions are not automatically closed.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("⏹️ YES, STOP","trade:stop:confirm").text("↩️ KEEP RUNNING","menu")});});
