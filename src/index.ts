@@ -307,11 +307,6 @@ bot.callbackQuery("wallet:refresh",async ctx=>{
     return show(ctx,"⚠️ *BALANCE CHECK FAILED*\\n\\nSolana RPC did not return a verified balance. Check the RPC endpoint and try again. No balance has been assumed.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔄 TRY AGAIN","wallet:refresh").row().text("⬅️ BACK",ctx.session.walletReturnTo==="setup"?"setup":"menu").text("🏠 MAIN MENU","menu")});
   }
 });
-  await ctx.answerCallbackQuery();
-  const result=await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[ctx.from.id]);
-  if(!result.rowCount) return show(ctx,"No wallet has been created or imported yet.",{reply_markup:walletKb(ctx.session.walletReturnTo==="setup"?"setup":"menu")});
-  return show(ctx,"💰 *YOUR TRADING WALLET*\n\nAddress: \x60"+result.rows[0].public_key+"\x60\n\nBalance unavailable: live RPC balance lookup is not connected.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔐 BACK UP WALLET","wallet:backup").row().text("↩️ RETURN","menu")});
-});
 bot.callbackQuery("review",async ctx=>{
   await ctx.answerCallbackQuery();
   const u=await user(ctx.from.id,ctx.from.username);
