@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { Bot, Context, InlineKeyboard, session } from "grammy";
+import { Bot, Context, InlineKeyboard, session, SessionFlavor } from "grammy";
 import pg from "pg";
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
@@ -12,6 +12,7 @@ if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
 type FilterField = "minMc"|"maxMc"|"minLiquidity"|"minVolume5m"|"minHolders"|"maxTop10"|"maxDev"|"minAgeSec"|"maxAgeMin";
 type Session = { input?: "buy"|"sl"|"tp"|"wallet_import"|`filter_${FilterField}`; walletReturnTo?: "setup"|"menu" };
+type Ctx = Context & SessionFlavor<Session>;
 const bot = new Bot<Ctx>(token);
 async function show(ctx: Ctx, message: string, extra: any = {}) {
   if (ctx.callbackQuery && "message" in ctx.callbackQuery && ctx.callbackQuery.message) {
@@ -184,7 +185,6 @@ async function patch(id:number, fields:Record<string,unknown>) {
   await pool.query("UPDATE public.users SET "+set+",updated_at=NOW() WHERE telegram_id=$1",[id,...e.map(x=>x[1])]);
   return user(id);
 }
-async function once(id:number,key:string) {
 async function readSolBalance(address:string):Promise<number>{
   const endpoint=process.env.SOLANA_RPC_URL;
   if(!endpoint) throw new Error("SOLANA_RPC_URL is not configured");
@@ -192,6 +192,7 @@ async function readSolBalance(address:string):Promise<number>{
   const lamports=await connection.getBalance(new PublicKey(address),"confirmed");
   return lamports/LAMPORTS_PER_SOL;
 }
+async function once(id:number,key:string) {
   const r=await pool.query("INSERT INTO public.notification_events(telegram_id,event_key) VALUES($1,$2) ON CONFLICT DO NOTHING",[id,key]); return r.rowCount===1;
 }
 
