@@ -3,7 +3,7 @@ import { Bot, Context, InlineKeyboard, session } from "grammy";
 import pg from "pg";
 
 const { Pool } = pg;
-const token = process.env.BOT_TOKEN;
+const token = process.env.BOT_TOKEN ?? process.env.TELEGRAM_BOT_TOKEN;
 if (!token) throw new Error("BOT_TOKEN is required");
 if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
