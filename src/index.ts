@@ -22,7 +22,7 @@ async function show(ctx: Ctx, message: string, extra: any = {}) {
       if (!description.includes("message to edit") && !description.includes("can't be edited") && !description.includes("message can't be edited")) throw error;
     }
   }
-  return show(ctx,message, extra);
+  return ctx.reply(message, extra);
 }
 bot.use(session({ initial: (): Session => ({}) }));
 
@@ -233,8 +233,8 @@ bot.callbackQuery("noop",async ctx=>ctx.answerCallbackQuery("Trade milestones ar
 bot.callbackQuery("wallet",async ctx=>{
   await ctx.answerCallbackQuery();
   const result=await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[ctx.from.id]);
-  if(!result.rowCount) return show(ctx,"💰 *YOUR TRADING WALLET*\\n\\nNo wallet has been created or imported yet.\\n\\nChoose an option below.",{parse_mode:"Markdown",reply_markup:walletKb()});
-  return show(ctx,"💰 *YOUR TRADING WALLET*\\n\\nStatus: WALLET READY\\nAddress: \\x60"+result.rows[0].public_key+"\\x60\\n\\nBalance: unavailable — live Solana RPC balance lookup is not connected yet.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔐 BACK UP WALLET","wallet:backup").row().text("🔄 REFRESH","wallet:refresh").row().text("↩️ RETURN TO MAIN MENU","menu")});
+  if(!result.rowCount) return show(ctx,"💰 *YOUR TRADING WALLET*\n\nNo wallet has been created or imported yet.\n\nChoose an option below.",{parse_mode:"Markdown",reply_markup:walletKb()});
+  return show(ctx,"💰 *YOUR TRADING WALLET*\n\nStatus: WALLET READY\nAddress: \x60"+result.rows[0].public_key+"\x60\n\nBalance: unavailable — live Solana RPC balance lookup is not connected yet.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔐 BACK UP WALLET","wallet:backup").row().text("🔄 REFRESH","wallet:refresh").row().text("↩️ RETURN TO MAIN MENU","menu")});
 });
 bot.callbackQuery("wallet:create",async ctx=>{
   await ctx.answerCallbackQuery();
@@ -242,10 +242,10 @@ bot.callbackQuery("wallet:create",async ctx=>{
   if(existing.rowCount) return show(ctx,"A wallet already exists. LaPrint will not replace it.",{reply_markup:new InlineKeyboard().text("🔐 BACK UP WALLET","wallet:backup").row().text("↩️ RETURN","wallet")});
   try {
     const address=await saveWallet(ctx.from.id,Keypair.generate());
-    return show(ctx,"✅ *WALLET CREATED*\\n\\nYour Solana wallet was generated and encrypted before storage.\\n\\nAddress:\\n\\x60"+address+"\\x60\\n\\nUse the backup action only in a private setting. Never share your private key.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔐 BACK UP WALLET","wallet:backup").row().text("📋 COPY ADDRESS","wallet:copy").row().text("↩️ RETURN TO WALLET","wallet")});
+    return show(ctx,"✅ *WALLET CREATED*\n\nYour Solana wallet was generated and encrypted before storage.\n\nAddress:\n\x60"+address+"\x60\n\nUse the backup action only in a private setting. Never share your private key.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔐 BACK UP WALLET","wallet:backup").row().text("📋 COPY ADDRESS","wallet:copy").row().text("↩️ RETURN TO WALLET","wallet")});
   } catch(error) {
     console.error("[wallet] create failed",error);
-    return show(ctx,"⚠️ *WALLET NOT CREATED*\\n\\nWallet encryption is not configured or the operation failed. No wallet was saved.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("↩️ RETURN","wallet")});
+    return show(ctx,"⚠️ *WALLET NOT CREATED*\n\nWallet encryption is not configured or the operation failed. No wallet was saved.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("↩️ RETURN","wallet")});
   }
 });
 bot.callbackQuery("wallet:import",async ctx=>{
@@ -253,13 +253,13 @@ bot.callbackQuery("wallet:import",async ctx=>{
   const existing=await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[ctx.from.id]);
   if(existing.rowCount) return show(ctx,"A wallet already exists. Import will not overwrite it.",{reply_markup:new InlineKeyboard().text("🔐 BACK UP WALLET","wallet:backup").row().text("↩️ RETURN","wallet")});
   ctx.session.input="wallet_import";
-  return show(ctx,"📥 *IMPORT SOLANA WALLET*\\n\\nSend your private key as a Base58 string or JSON secret-key array. Recovery phrases are not supported in this import screen.\\n\\nYour message will be deleted immediately where Telegram permits. Sending a key through Telegram still means Telegram processes that message; only continue if you accept that risk.\\n\\n↩️ Return to cancel.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("↩️ CANCEL / RETURN","wallet")});
+  return show(ctx,"📥 *IMPORT SOLANA WALLET*\n\nSend your private key as a Base58 string or JSON secret-key array. Recovery phrases are not supported in this import screen.\n\nYour message will be deleted immediately where Telegram permits. Sending a key through Telegram still means Telegram processes that message; only continue if you accept that risk.\n\n↩️ Return to cancel.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("↩️ CANCEL / RETURN","wallet")});
 });
 bot.callbackQuery("wallet:backup",async ctx=>{
   await ctx.answerCallbackQuery();
   try {
     const secret=await walletBackup(ctx.from.id);
-    return show(ctx,"🔐 *PRIVATE WALLET BACKUP*\\n\\nBase58 private key:\\n\\n\\x60"+secret+"\\x60\\n\\nAnyone with this key can control your funds. Store it securely, then delete this message. LaPrint support will never ask for it.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("↩️ RETURN TO WALLET","wallet")});
+    return show(ctx,"🔐 *PRIVATE WALLET BACKUP*\n\nBase58 private key:\n\n\x60"+secret+"\x60\n\nAnyone with this key can control your funds. Store it securely, then delete this message. LaPrint support will never ask for it.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("↩️ RETURN TO WALLET","wallet")});
   } catch(error) {
     console.error("[wallet] backup failed",error);
     return show(ctx,"⚠️ Wallet backup is unavailable. Check encryption configuration and wallet status.",{reply_markup:new InlineKeyboard().text("↩️ RETURN","wallet")});
@@ -269,13 +269,13 @@ bot.callbackQuery("wallet:copy",async ctx=>{
   await ctx.answerCallbackQuery();
   const result=await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[ctx.from.id]);
   if(!result.rowCount) return show(ctx,"No wallet was found.",{reply_markup:walletKb()});
-  return show(ctx,"📋 Wallet address:\\n\\x60"+result.rows[0].public_key+"\\x60",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("↩️ RETURN","wallet")});
+  return show(ctx,"📋 Wallet address:\n\x60"+result.rows[0].public_key+"\x60",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("↩️ RETURN","wallet")});
 });
 bot.callbackQuery("wallet:refresh",async ctx=>{
   await ctx.answerCallbackQuery();
   const result=await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[ctx.from.id]);
   if(!result.rowCount) return show(ctx,"No wallet has been created or imported yet.",{reply_markup:walletKb()});
-  return show(ctx,"💰 *YOUR TRADING WALLET*\\n\\nAddress: \\x60"+result.rows[0].public_key+"\\x60\\n\\nBalance unavailable: live RPC balance lookup is not connected.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔐 BACK UP WALLET","wallet:backup").row().text("↩️ RETURN","menu")});
+  return show(ctx,"💰 *YOUR TRADING WALLET*\n\nAddress: \x60"+result.rows[0].public_key+"\x60\n\nBalance unavailable: live RPC balance lookup is not connected.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔐 BACK UP WALLET","wallet:backup").row().text("↩️ RETURN","menu")});
 });
 bot.callbackQuery("review",async ctx=>{await ctx.answerCallbackQuery();const u=await user(ctx.from.id,ctx.from.username);const missing:string[]=[];if(!u.buy_amount)missing.push("Buy Amount");if(!u.tp_config)missing.push("Take Profit");if(!u.sl_percent)missing.push("Stop Loss");if(!u.filters)missing.push("Filters");if(!u.alerts)missing.push("Alerts");if(Number(u.wallet_balance||0)<=0)missing.push("Funded Wallet");const txt=missing.length?"⚠️ *SETUP INCOMPLETE*\n\nMissing:\n"+missing.map(x=>"❌ "+x).join("\n"):"🎯 *FINAL REVIEW*\n\n💰 Buy: "+u.buy_amount+" SOL\n🎯 TP: configured\n🛑 SL: "+u.sl_percent+"%\n🔎 Filters: smart\n🔔 Milestones: ON\n\nNothing executes until activation.";await show(ctx,txt,{parse_mode:"Markdown",reply_markup:missing.length?setupKb():new InlineKeyboard().text("🚀 ENABLE","activate").row().text("⚙️ EDIT","setup").text("🏠 MAIN MENU","menu")});});
 bot.callbackQuery("activate",async ctx=>{await ctx.answerCallbackQuery();const u=await user(ctx.from.id,ctx.from.username);const missing:string[]=[];if(!u.buy_amount)missing.push("Buy Amount");if(!u.tp_config)missing.push("Take Profit");if(!u.sl_percent)missing.push("Stop Loss");if(!u.filters)missing.push("Filters");if(!u.alerts)missing.push("Alerts");if(Number(u.wallet_balance||0)<=0)missing.push("Funded Wallet");if(missing.length)return show(ctx,"⚠️ *TRADING NOT READY*\n\n"+missing.map(x=>"❌ "+x).join("\n"),{parse_mode:"Markdown",reply_markup:setupKb()});await patch(ctx.from.id,{onboarding_complete:true,trading_active:true});await show(ctx,"🎯 *AUTOPILOT ACTIVE*\n\n🟢 Filters active\n🟢 Safety active\n🟢 Trade milestones active\n\nWaiting for qualified calls.",{parse_mode:"Markdown",reply_markup:mainKb(true,u.mode)});});
@@ -296,19 +296,19 @@ bot.on("message:text",async ctx=>{
       const bytes=raw.startsWith("[")?Uint8Array.from(JSON.parse(raw)):bs58.decode(raw);
       const keypair=Keypair.fromSecretKey(bytes);
       const address=await saveWallet(ctx.from.id,keypair);
-      return show(ctx,"✅ *WALLET IMPORTED*\\n\\nYour Solana private key was validated and encrypted before storage.\\n\\nAddress:\\n\\x60"+address+"\\x60\\n\\nYour submitted message was deleted where Telegram permitted it.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔐 BACK UP WALLET","wallet:backup").row().text("↩️ RETURN TO WALLET","wallet")});
+      return show(ctx,"✅ *WALLET IMPORTED*\n\nYour Solana private key was validated and encrypted before storage.\n\nAddress:\n\x60"+address+"\x60\n\nYour submitted message was deleted where Telegram permitted it.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔐 BACK UP WALLET","wallet:backup").row().text("↩️ RETURN TO WALLET","wallet")});
     }catch(error){
       console.error("[wallet] import failed",error);
-      return show(ctx,"⚠️ *IMPORT FAILED*\\n\\nThe key was invalid, encryption is not configured, or a wallet already exists. No existing wallet was overwritten.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("📥 TRY AGAIN","wallet:import").row().text("↩️ RETURN","wallet")});
+      return show(ctx,"⚠️ *IMPORT FAILED*\n\nThe key was invalid, encryption is not configured, or a wallet already exists. No existing wallet was overwritten.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("📥 TRY AGAIN","wallet:import").row().text("↩️ RETURN","wallet")});
     }
   }
   if(ctx.session.input==="buy"){
     const v=Number(raw);if(!Number.isFinite(v)||v<=0)return show(ctx,"⚠️ Enter a valid positive SOL amount.");
-    await patch(ctx.from.id,{buy_amount:v});ctx.session.input=undefined;return show(ctx,"✅ BUY AMOUNT SAVED\\n\\nTrade size: "+v+" SOL",{reply_markup:setupKb()});
+    await patch(ctx.from.id,{buy_amount:v});ctx.session.input=undefined;return show(ctx,"✅ BUY AMOUNT SAVED\n\nTrade size: "+v+" SOL",{reply_markup:setupKb()});
   }
   if(ctx.session.input==="sl"){
     const v=Number(raw);if(!Number.isFinite(v)||v>=0||v<-100)return show(ctx,"⚠️ Enter a stop loss between -1 and -100.");
-    await patch(ctx.from.id,{sl_percent:v});ctx.session.input=undefined;return show(ctx,"✅ STOP LOSS SAVED\\n\\nSL: "+v+"%",{reply_markup:setupKb()});
+    await patch(ctx.from.id,{sl_percent:v});ctx.session.input=undefined;return show(ctx,"✅ STOP LOSS SAVED\n\nSL: "+v+"%",{reply_markup:setupKb()});
   }
 });
 bot.catch(e=>console.error("BOT_ERROR",e.error));
