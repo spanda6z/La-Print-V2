@@ -58,6 +58,43 @@ async function init() {
   console.log("[db] schema ready", JSON.stringify(state));
 }
 
+async function databaseSmokeTest() {
+  const client = await pool.connect();
+  const probeId = -7319042601;
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      "INSERT INTO public.users(telegram_id,username) VALUES($1,$2) ON CONFLICT(telegram_id) DO UPDATE SET username=EXCLUDED.username,updated_at=NOW()",
+      [probeId, "__laprint_v2_smoke_test__"]
+    );
+    const userCheck = await client.query(
+      "SELECT telegram_id,username FROM public.users WHERE telegram_id=$1",
+      [probeId]
+    );
+    if (userCheck.rowCount !== 1 || userCheck.rows[0]?.username !== "__laprint_v2_smoke_test__") {
+      throw new Error("Database smoke test failed: user insert/upsert did not round-trip");
+    }
+    const firstEvent = await client.query(
+      "INSERT INTO public.notification_events(telegram_id,event_key) VALUES($1,$2) ON CONFLICT DO NOTHING",
+      [probeId, "smoke-test"]
+    );
+    const duplicateEvent = await client.query(
+      "INSERT INTO public.notification_events(telegram_id,event_key) VALUES($1,$2) ON CONFLICT DO NOTHING",
+      [probeId, "smoke-test"]
+    );
+    if (firstEvent.rowCount !== 1 || duplicateEvent.rowCount !== 0) {
+      throw new Error("Database smoke test failed: notification deduplication is not working");
+    }
+    await client.query("ROLLBACK");
+    console.log("[db] smoke test passed: user upsert + notification deduplication");
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const TELEGRAM_POLL_LOCK = 7319042601;
 
@@ -152,6 +189,7 @@ bot.on("message:text",async ctx=>{if(!ctx.session.input)return;const raw=ctx.mes
 
 bot.catch(e=>console.error("BOT_ERROR",e.error));
 await init();
+await databaseSmokeTest();
 await bot.api.setMyCommands([{command:"start",description:"Open LaPrint"},{command:"menu",description:"Main menu"},{command:"setup",description:"Trading setup"},{command:"mode",description:"Switch mode"}]);
 console.log("LaPrint V2 starting. ENGINE_MODE="+(process.env.ENGINE_MODE||"disabled"));
 const pollingClient = await acquireTelegramPollingLock();
