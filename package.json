@@ -1,1 +1,27 @@
-{"name":"la-print-v2","version":"1.0.0","private":true,"type":"module","scripts":{"dev":"tsx src/index.ts","build":"tsc","start":"node dist/index.js"},"dependencies":{"dotenv":"^17.2.2","grammy":"^1.38.4","pg":"^8.16.3"},"devDependencies":{"@types/node":"^24.5.2","@types/pg":"^8.15.5","tsx":"^4.20.5","typescript":"^5.9.2"},"engines":{"node":">=20"}}
+{
+  "name": "la-print-v2",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.2",
+    "grammy": "^1.38.4",
+    "pg": "^8.16.3",
+    "@solana/web3.js": "^1.98.4",
+    "bs58": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "@types/pg": "^8.15.5",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
