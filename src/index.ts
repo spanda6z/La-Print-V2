@@ -13,8 +13,48 @@ const bot = new Bot<Ctx>(token);
 bot.use(session({ initial: (): Session => ({}) }));
 
 async function init() {
-  await pool.query("CREATE TABLE IF NOT EXISTS users (telegram_id BIGINT PRIMARY KEY, username TEXT, mode TEXT, onboarding_complete BOOLEAN NOT NULL DEFAULT FALSE, buy_amount NUMERIC, tp_config JSONB, sl_percent NUMERIC, filters JSONB, alerts JSONB, wallet_address TEXT, wallet_balance NUMERIC NOT NULL DEFAULT 0, funding_prompt_sent BOOLEAN NOT NULL DEFAULT FALSE, trading_active BOOLEAN NOT NULL DEFAULT FALSE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())");
-  await pool.query("CREATE TABLE IF NOT EXISTS notification_events (telegram_id BIGINT NOT NULL, event_key TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW(), PRIMARY KEY (telegram_id,event_key))");
+  // Create the V2 schema for fresh databases, then safely extend legacy users tables.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      telegram_id BIGINT PRIMARY KEY,
+      username TEXT,
+      mode TEXT,
+      onboarding_complete BOOLEAN NOT NULL DEFAULT FALSE,
+      buy_amount NUMERIC,
+      tp_config JSONB,
+      sl_percent NUMERIC,
+      filters JSONB,
+      alerts JSONB,
+      wallet_address TEXT,
+      wallet_balance NUMERIC NOT NULL DEFAULT 0,
+      funding_prompt_sent BOOLEAN NOT NULL DEFAULT FALSE,
+      trading_active BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_id BIGINT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS mode TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_complete BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS buy_amount NUMERIC;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS tp_config JSONB;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS sl_percent NUMERIC;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS filters JSONB;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS alerts JSONB;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet_address TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet_balance NUMERIC NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS funding_prompt_sent BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS trading_active BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+    CREATE UNIQUE INDEX IF NOT EXISTS users_telegram_id_uidx ON users(telegram_id);
+    CREATE TABLE IF NOT EXISTS notification_events (
+      telegram_id BIGINT NOT NULL,
+      event_key TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (telegram_id, event_key)
+    );
+  `);
 }
 async function user(id:number, username?:string) {
   await pool.query("INSERT INTO users(telegram_id,username) VALUES($1,$2) ON CONFLICT(telegram_id) DO UPDATE SET username=EXCLUDED.username,updated_at=NOW()",[id,username||null]);
