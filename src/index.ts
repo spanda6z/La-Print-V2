@@ -10,8 +10,8 @@ const token = process.env.BOT_TOKEN ?? process.env.TELEGRAM_BOT_TOKEN;
 if (!token) throw new Error("BOT_TOKEN is required");
 if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
-type Session = { input?: "buy"|"sl"|"tp"|"wallet_import"; walletReturnTo?: "setup"|"menu" };
-type Ctx = Context & { session: Session };
+type FilterField = "minMc"|"maxMc"|"minLiquidity"|"minVolume5m"|"minHolders"|"maxTop10"|"maxDev"|"minAgeSec"|"maxAgeMin";
+type Session = { input?: "buy"|"sl"|"tp"|"wallet_import"|`filter_${FilterField}`; walletReturnTo?: "setup"|"menu" };
 const bot = new Bot<Ctx>(token);
 async function show(ctx: Ctx, message: string, extra: any = {}) {
   if (ctx.callbackQuery && "message" in ctx.callbackQuery && ctx.callbackQuery.message) {
@@ -231,10 +231,16 @@ bot.callbackQuery("setup:filters",async ctx=>{await ctx.answerCallbackQuery();aw
 bot.callbackQuery(/^filter:(pre|new|both)$/,async ctx=>{await ctx.answerCallbackQuery();await patch(ctx.from.id,{filters:{type:ctx.match[1],minMc:3000,maxMc:50000,minLiquidity:5000,minVolume5m:2000,minHolders:50,maxTop10:35,maxDev:5,minAgeSec:30,maxAgeMin:30,smart:true}});await show(ctx,"✅ *FILTERS SAVED*\n\nMC: $3K → $50K\nLiquidity: ≥ $5K\n5M Volume: ≥ $2K\nHolders: ≥ 50\nTop 10: ≤ 35%\nDev: ≤ 5%\nSmart filters: ON",{parse_mode:"Markdown",reply_markup:setupKb()});});
 bot.callbackQuery("filter:settings",async ctx=>{
   await ctx.answerCallbackQuery();
-  const u=await user(ctx.from.id,ctx.from.username);const f=u.filters||{};
-  await show(ctx,"🔎 *SAVED FILTER THRESHOLDS*\\n\\nMarket type: "+(f.type||"Not selected")+"\\nMarket cap: $"+(f.minMc??3000)+" – $"+(f.maxMc??50000)+"\\nLiquidity: ≥ $"+(f.minLiquidity??5000)+"\\n5M volume: ≥ $"+(f.minVolume5m??2000)+"\\nHolders: ≥ "+(f.minHolders??50)+"\\nTop 10: ≤ "+(f.maxTop10??35)+"%\\nDev: ≤ "+(f.maxDev??5)+"%\\nAge: "+(f.minAgeSec??30)+"s – "+(f.maxAgeMin??30)+"m\\nSmart filters: "+(f.smart===false?"OFF":"ON")+"\\n\\nThese are saved defaults. Individual threshold editing is not implemented yet.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🧠 SMART FILTERS","filter:smart").row().text("⬅️ BACK","setup:filters").text("🏠 MAIN MENU","menu")});
+  const u=await user(ctx.from.id,ctx.from.username);const f=u.filters||{minMc:3000,maxMc:50000,minLiquidity:5000,minVolume5m:2000,minHolders:50,maxTop10:35,maxDev:5,minAgeSec:30,maxAgeMin:30,smart:true};
+  const k=new InlineKeyboard().text("MIN MC","filter:edit:minMc").text("MAX MC","filter:edit:maxMc").row().text("MIN LIQUIDITY","filter:edit:minLiquidity").text("MIN 5M VOL","filter:edit:minVolume5m").row().text("MIN HOLDERS","filter:edit:minHolders").text("MAX TOP 10 %","filter:edit:maxTop10").row().text("MAX DEV %","filter:edit:maxDev").text("MIN AGE SEC","filter:edit:minAgeSec").row().text("MAX AGE MIN","filter:edit:maxAgeMin").row().text("🧠 SMART: "+(f.smart===false?"OFF":"ON"),"filter:smart").row().text("⬅️ BACK","setup:filters").text("🏠 MAIN MENU","menu");
+  await show(ctx,"🔎 *FILTER SETTINGS*\\n\\nMarket: "+(f.type||"Both")+"\\nMin MC: $"+(f.minMc??3000)+" | Max MC: $"+(f.maxMc??50000)+"\\nMin liquidity: $"+(f.minLiquidity??5000)+"\\n5M volume: $"+(f.minVolume5m??2000)+"\\nMin holders: "+(f.minHolders??50)+"\\nTop 10 max: "+(f.maxTop10??35)+"%\\nDev max: "+(f.maxDev??5)+"%\\nAge: "+(f.minAgeSec??30)+"s – "+(f.maxAgeMin??30)+"m\\nSmart filters: "+(f.smart===false?"OFF":"ON")+"\\n\\nTap a field to edit its threshold. Changes save immediately.",{parse_mode:"Markdown",reply_markup:k});
 });
-bot.callbackQuery("filter:smart",async ctx=>{await ctx.answerCallbackQuery();await patch(ctx.from.id,{filters:{type:"both",minMc:3000,maxMc:50000,minLiquidity:5000,minVolume5m:2000,minHolders:50,maxTop10:35,maxDev:5,minAgeSec:30,maxAgeMin:30,smart:true}});await show(ctx,"🧠 *SMART FILTERS ON*\n\nLiquidity, volume, holder distribution, concentration, dev exposure and safety checks must pass before a token qualifies.",{parse_mode:"Markdown",reply_markup:filterKb()});});
+bot.callbackQuery(/^filter:edit:(minMc|maxMc|minLiquidity|minVolume5m|minHolders|maxTop10|maxDev|minAgeSec|maxAgeMin)$/,async ctx=>{
+  await ctx.answerCallbackQuery();const field=ctx.match[1] as FilterField;ctx.session.input=("filter_"+field) as Session["input"];
+  const labels:Record<FilterField,string>={minMc:"minimum market cap in USD",maxMc:"maximum market cap in USD",minLiquidity:"minimum liquidity in USD",minVolume5m:"minimum 5-minute volume in USD",minHolders:"minimum holder count",maxTop10:"maximum top-10 holder concentration percentage",maxDev:"maximum developer holding percentage",minAgeSec:"minimum token age in seconds",maxAgeMin:"maximum token age in minutes"};
+  await show(ctx,"✏️ *EDIT FILTER*\\n\\nEnter the "+labels[field]+".\\nNumbers only. Other filter settings will be preserved.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("↩️ CANCEL","filter:settings").text("🏠 MAIN MENU","menu")});
+});
+bot.callbackQuery("filter:smart",async ctx=>{await ctx.answerCallbackQuery();const u=await user(ctx.from.id,ctx.from.username);const old=u.filters||{type:"both",minMc:3000,maxMc:50000,minLiquidity:5000,minVolume5m:2000,minHolders:50,maxTop10:35,maxDev:5,minAgeSec:30,maxAgeMin:30};const next={...old,smart:old.smart===false};await patch(ctx.from.id,{filters:next});await show(ctx,"🧠 *SMART FILTERS "+(next.smart?"ON":"OFF")+"*\\n\\n"+(next.smart?"Smart checks are enabled in your saved configuration.":"Smart checks are disabled in your saved configuration.")+"\\n\\nLive token qualification remains unavailable until the filter evaluator is connected.",{parse_mode:"Markdown",reply_markup:filterKb()});});
 
 bot.callbackQuery(/^alert:(new|liq|vol|bond)$/,async ctx=>{await ctx.answerCallbackQuery();const u=await user(ctx.from.id,ctx.from.username);const old=u.alerts||{};const key=({new:"newToken",liq:"liquidity",vol:"volume",bond:"bonding"} as Record<string,string>)[ctx.match[1]];const next={...old,milestones:true,[key]:!old[key]};await patch(ctx.from.id,{alerts:next});const k=new InlineKeyboard().text((next.newToken?"☑":"☐")+" NEW TOKEN","alert:new").text((next.liquidity?"☑":"☐")+" LIQUIDITY","alert:liq").row().text((next.volume?"☑":"☐")+" VOLUME","alert:vol").text((next.bonding?"☑":"☐")+" BONDING","alert:bond").row().text("💾 SAVE","alert:save").row().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu");await show(ctx,"🔔 *OPTIONAL ALERTS*\n\nTrade milestones: ALWAYS ON\nTap an option to toggle it. Your selection is saved immediately.",{parse_mode:"Markdown",reply_markup:k});});
 bot.callbackQuery("alert:save",async ctx=>{await ctx.answerCallbackQuery();const old=(await user(ctx.from.id,ctx.from.username)).alerts||{};await patch(ctx.from.id,{alerts:{...old,milestones:true}});await show(ctx,"✅ *ALERTS SAVED*\n\nTrade lifecycle milestones are always on. Optional market alerts are saved.",{parse_mode:"Markdown",reply_markup:setupKb()});});
@@ -357,6 +363,15 @@ bot.on("message:text",async ctx=>{
   if(ctx.session.input==="sl"){
     const v=Number(raw);if(!Number.isFinite(v)||v>=0||v<-100)return show(ctx,"⚠️ Enter a stop loss between -1 and -100.");
     await patch(ctx.from.id,{sl_percent:v});ctx.session.input=undefined;return show(ctx,"✅ STOP LOSS SAVED\n\nSL: "+v+"%",{reply_markup:setupKb()});
+  }
+  if(ctx.session.input?.startsWith("filter_")){
+    const field=ctx.session.input.slice(7) as FilterField;const value=Number(raw);
+    const valid=Number.isFinite(value)&&value>=0&&((field!=="maxTop10"&&field!=="maxDev")||value<=100)&&((field!=="minHolders"&&field!=="minAgeSec"&&field!=="maxAgeMin")||Number.isInteger(value));
+    if(!valid)return show(ctx,"⚠️ Enter a valid non-negative number. Percentages must be 0–100; holder count and age values must be whole numbers.");
+    const u=await user(ctx.from.id,ctx.from.username);const current=u.filters||{type:"both",minMc:3000,maxMc:50000,minLiquidity:5000,minVolume5m:2000,minHolders:50,maxTop10:35,maxDev:5,minAgeSec:30,maxAgeMin:30,smart:true};
+    const next={...current,[field]:value};if(next.minMc>next.maxMc)return show(ctx,"⚠️ Minimum market cap cannot exceed maximum market cap.");
+    await patch(ctx.from.id,{filters:next});ctx.session.input=undefined;
+    return show(ctx,"✅ FILTER SAVED\\n\\n"+field+": "+value+"\\n\\nYour other filter settings were preserved.",{reply_markup:filterKb()});
   }
   if(ctx.session.input==="tp"){
     const v=Number(raw);if(!Number.isFinite(v)||v<=0||v>1000)return show(ctx,"⚠️ Enter a positive take-profit target between 1% and 1000%.");
