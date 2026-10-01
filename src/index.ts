@@ -10,7 +10,7 @@ const token = process.env.BOT_TOKEN ?? process.env.TELEGRAM_BOT_TOKEN;
 if (!token) throw new Error("BOT_TOKEN is required");
 if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
-type Session = { input?: "buy"|"sl"|"wallet_import" };
+type Session = { input?: "buy"|"sl"|"wallet_import"; walletReturnTo?: "setup"|"menu" };
 type Ctx = Context & { session: Session };
 const bot = new Bot<Ctx>(token);
 async function show(ctx: Ctx, message: string, extra: any = {}) {
