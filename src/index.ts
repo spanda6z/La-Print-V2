@@ -13,61 +13,84 @@ const bot = new Bot<Ctx>(token);
 bot.use(session({ initial: (): Session => ({}) }));
 
 async function init() {
-  // Create the V2 schema for fresh databases, then safely extend legacy users tables.
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS users (
-      telegram_id BIGINT PRIMARY KEY,
-      username TEXT,
-      mode TEXT,
-      onboarding_complete BOOLEAN NOT NULL DEFAULT FALSE,
-      buy_amount NUMERIC,
-      tp_config JSONB,
-      sl_percent NUMERIC,
-      filters JSONB,
-      alerts JSONB,
-      wallet_address TEXT,
-      wallet_balance NUMERIC NOT NULL DEFAULT 0,
+    CREATE TABLE IF NOT EXISTS public.users (
+      telegram_id BIGINT PRIMARY KEY, username TEXT, mode TEXT,
+      onboarding_complete BOOLEAN NOT NULL DEFAULT FALSE, buy_amount NUMERIC,
+      tp_config JSONB, sl_percent NUMERIC, filters JSONB, alerts JSONB,
+      wallet_address TEXT, wallet_balance NUMERIC NOT NULL DEFAULT 0,
       funding_prompt_sent BOOLEAN NOT NULL DEFAULT FALSE,
       trading_active BOOLEAN NOT NULL DEFAULT FALSE,
-      created_at TIMESTAMPTZ DEFAULT NOW(),
-      updated_at TIMESTAMPTZ DEFAULT NOW()
+      created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
     );
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_id BIGINT;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS mode TEXT;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_complete BOOLEAN NOT NULL DEFAULT FALSE;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS buy_amount NUMERIC;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS tp_config JSONB;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS sl_percent NUMERIC;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS filters JSONB;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS alerts JSONB;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet_address TEXT;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet_balance NUMERIC NOT NULL DEFAULT 0;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS funding_prompt_sent BOOLEAN NOT NULL DEFAULT FALSE;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS trading_active BOOLEAN NOT NULL DEFAULT FALSE;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
-    CREATE UNIQUE INDEX IF NOT EXISTS users_telegram_id_uidx ON users(telegram_id);
-    CREATE TABLE IF NOT EXISTS notification_events (
-      telegram_id BIGINT NOT NULL,
-      event_key TEXT NOT NULL,
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS telegram_id BIGINT;
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS username TEXT;
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS mode TEXT;
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS onboarding_complete BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS buy_amount NUMERIC;
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS tp_config JSONB;
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS sl_percent NUMERIC;
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS filters JSONB;
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS alerts JSONB;
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS wallet_address TEXT;
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS wallet_balance NUMERIC NOT NULL DEFAULT 0;
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS funding_prompt_sent BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS trading_active BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+    CREATE UNIQUE INDEX IF NOT EXISTS users_telegram_id_uidx ON public.users(telegram_id);
+    CREATE TABLE IF NOT EXISTS public.notification_events (
+      telegram_id BIGINT NOT NULL, event_key TEXT NOT NULL,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       PRIMARY KEY (telegram_id, event_key)
     );
   `);
+  const check = await pool.query(`
+    SELECT current_database() AS database, current_schema() AS schema,
+      current_setting('search_path') AS search_path,
+      to_regclass('public.users')::text AS users_table,
+      to_regclass('public.notification_events')::text AS notifications_table
+  `);
+  const state = check.rows[0];
+  if (!state.users_table || !state.notifications_table) {
+    throw new Error("Database migration verification failed: " + JSON.stringify(state));
+  }
+  console.log("[db] schema ready", JSON.stringify(state));
 }
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const TELEGRAM_POLL_LOCK = 7319042601;
+
+async function acquireTelegramPollingLock() {
+  const client = await pool.connect();
+  try {
+    for (;;) {
+      const result = await client.query("SELECT pg_try_advisory_lock($1) AS locked", [TELEGRAM_POLL_LOCK]);
+      if (result.rows[0]?.locked) {
+        console.log("[telegram] exclusive polling lock acquired");
+        return client;
+      }
+      console.warn("[telegram] another LaPrint V2 poller holds the lock; waiting");
+      await sleep(5000);
+    }
+  } catch (error) {
+    client.release();
+    throw error;
+  }
+}
+
 async function user(id:number, username?:string) {
-  await pool.query("INSERT INTO users(telegram_id,username) VALUES($1,$2) ON CONFLICT(telegram_id) DO UPDATE SET username=EXCLUDED.username,updated_at=NOW()",[id,username||null]);
-  const r=await pool.query("SELECT * FROM users WHERE telegram_id=$1",[id]); return r.rows[0];
+  await pool.query("INSERT INTO public.users(telegram_id,username) VALUES($1,$2) ON CONFLICT(telegram_id) DO UPDATE SET username=EXCLUDED.username,updated_at=NOW()",[id,username||null]);
+  const r=await pool.query("SELECT * FROM public.users WHERE telegram_id=$1",[id]); return r.rows[0];
 }
 async function patch(id:number, fields:Record<string,unknown>) {
   const e=Object.entries(fields); if(!e.length) return user(id);
   const set=e.map((x,i)=>x[0]+"=$"+(i+2)).join(",");
-  await pool.query("UPDATE users SET "+set+",updated_at=NOW() WHERE telegram_id=$1",[id,...e.map(x=>x[1])]);
+  await pool.query("UPDATE public.users SET "+set+",updated_at=NOW() WHERE telegram_id=$1",[id,...e.map(x=>x[1])]);
   return user(id);
 }
 async function once(id:number,key:string) {
-  const r=await pool.query("INSERT INTO notification_events(telegram_id,event_key) VALUES($1,$2) ON CONFLICT DO NOTHING",[id,key]); return r.rowCount===1;
+  const r=await pool.query("INSERT INTO public.notification_events(telegram_id,event_key) VALUES($1,$2) ON CONFLICT DO NOTHING",[id,key]); return r.rowCount===1;
 }
 
 const back = (target="setup") => new InlineKeyboard().text("⬅️ BACK",target).text("🏠 MAIN MENU","menu");
@@ -131,4 +154,32 @@ bot.catch(e=>console.error("BOT_ERROR",e.error));
 await init();
 await bot.api.setMyCommands([{command:"start",description:"Open LaPrint"},{command:"menu",description:"Main menu"},{command:"setup",description:"Trading setup"},{command:"mode",description:"Switch mode"}]);
 console.log("LaPrint V2 starting. ENGINE_MODE="+(process.env.ENGINE_MODE||"disabled"));
-await bot.start({onStart:i=>console.log("Bot @"+i.username+" running")});
+const pollingClient = await acquireTelegramPollingLock();
+let shuttingDown = false;
+const shutdown = async (signal: string) => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log("[shutdown] received " + signal);
+  bot.stop();
+  try { await pollingClient.query("SELECT pg_advisory_unlock($1)", [TELEGRAM_POLL_LOCK]); } catch {}
+  pollingClient.release();
+  await pool.end();
+};
+process.once("SIGTERM", () => { void shutdown("SIGTERM"); });
+process.once("SIGINT", () => { void shutdown("SIGINT"); });
+const me = await bot.api.getMe();
+console.log("[telegram] authenticated as @" + me.username);
+while (!shuttingDown) {
+  try {
+    await bot.start({onStart:i=>console.log("Bot @"+i.username+" running")});
+    break;
+  } catch (error) {
+    const err = error as { error_code?: number; description?: string };
+    if (err?.error_code === 409 || String(err?.description || error).includes("409: Conflict")) {
+      console.error("[telegram] polling conflict; retrying after 5 seconds while previous deploy drains");
+      await sleep(5000);
+      continue;
+    }
+    throw error;
+  }
+}
