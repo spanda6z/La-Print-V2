@@ -1,4 +1,5 @@
 import { InlineKeyboard } from "grammy";
+import { notifyAdmin } from "./admin-notifications";
 
 type Deps = {
   bot: any;
@@ -266,6 +267,7 @@ async function save(deps: Deps, id: number, c: StrategyConfig, customized = c.cu
       strictData: next.discovery.strictData
     }
   });
+  await notifyAdmin(deps.bot, "strategy_changed", { telegram_id: id, profile: next.profile, customized: next.customized, version: next.version });
   return next;
 }
 
