@@ -7,10 +7,10 @@ export async function snapshotStrategyForEntry(pool: any, telegramId: number): P
   if (!wallet) throw new Error("No active trading wallet is selected.");
   const snapshot = { ...config, wallet: { id: wallet.id, name: wallet.name, publicKey: wallet.publicKey } };
   const r = await pool.query(
-    `INSERT INTO public.trade_config_snapshots(telegram_id,strategy_profile,strategy_version,config)
-     VALUES($1,$2,$3,$4)
+    `INSERT INTO public.trade_config_snapshots(telegram_id,strategy_profile,strategy_version,config,wallet_id,wallet_address)
+     VALUES($1,$2,$3,$4,$5,$6)
      RETURNING id`,
-    [telegramId, config.profile, config.version, JSON.stringify(snapshot)]
+    [telegramId, config.profile, config.version, JSON.stringify(snapshot), wallet.id, wallet.publicKey]
   );
   return { id: String(r.rows[0].id), config };
 }
