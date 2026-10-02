@@ -4,10 +4,10 @@ import pg from "pg";
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 import bs58 from "bs58";
-import { registerStrategySettings } from "./settings-v2";
-import { notifyAdmin } from "./admin-notifications";
-import { registerAdminConsole, ensureAdminAuditTable, recordAdminEvent } from "./admin-console";
-import { registerMultiWallets, ensureMultiWalletSchema } from "./multi-wallets";
+import { registerStrategySettings } from "./settings-v2.js";
+import { notifyAdmin } from "./admin-notifications.js";
+import { registerAdminConsole, ensureAdminAuditTable, recordAdminEvent } from "./admin-console.js";
+import { registerMultiWallets, ensureMultiWalletSchema } from "./multi-wallets.js";
 
 const { Pool } = pg;
 const token = process.env.BOT_TOKEN ?? process.env.TELEGRAM_BOT_TOKEN;
@@ -231,7 +231,7 @@ async function setup(ctx:Ctx){ const u=await user(ctx.from!.id,ctx.from!.usernam
 
 bot.command("start",async ctx=>{if(!ctx.from)return;const u=await user(ctx.from.id,ctx.from.username); await recordAdminEvent(pool,"user_started",{telegram_id:ctx.from.id,username:ctx.from.username||null}); if(u.onboarding_complete) return menu(ctx); await show(ctx,"🤖 *TRADE AUTOPILOT*\n\nYour Telegram trading assistant for qualified calls and automated execution.\n\n🎯 *AUTOPILOT* — qualified calls can be executed automatically.\n\n✋ *MANUAL* — review each call before execution.\n\nSet your trade rules, filters and alerts before trading begins.\n\nChoose your mode:",{parse_mode:"Markdown",reply_markup:modeKb()});});
 bot.command("menu",menu);
-bot.command("admin_test", async ctx=>{ await ctx.deleteMessage().catch(()=>{}); await notifyAdmin(bot,"system_error",{message:"Admin notification test",telegram_id:ctx.from.id}); });
+bot.command("admin_test", async ctx=>{ if(!ctx.from)return; await ctx.deleteMessage().catch(()=>{}); await notifyAdmin(bot,"system_error",{message:"Admin notification test",telegram_id:ctx.from.id}); });
 bot.command("mode",async ctx=>show(ctx,"🎯 *TRADING MODE*\n\nChoose how you want the bot to operate.",{parse_mode:"Markdown",reply_markup:modeKb()}));
 
 bot.callbackQuery("mode:auto",async ctx=>{await ctx.answerCallbackQuery();await patch(ctx.from.id,{mode:"autopilot",onboarding_complete:true});await show(ctx,"🎯 *AUTOPILOT*\n\nQualified calls that pass your filters and safety checks can be executed automatically.\n\nNothing starts until your setup is complete.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("⚙️ SET UP AUTOPILOT","setup").row().text("⬅️ BACK","start").text("🏠 MAIN MENU","menu")});});
