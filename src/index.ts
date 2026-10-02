@@ -5,6 +5,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 import bs58 from "bs58";
 import { registerStrategySettings } from "./settings-v2";
+import { notifyAdmin } from "./admin-notifications";
 
 const { Pool } = pg;
 const token = process.env.BOT_TOKEN ?? process.env.TELEGRAM_BOT_TOKEN;
@@ -226,7 +227,7 @@ async function menu(ctx:Ctx){ const u=await user(ctx.from!.id,ctx.from!.username
 async function setup(ctx:Ctx){ const u=await user(ctx.from!.id,ctx.from!.username); const wallet=await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[ctx.from!.id]); await show(ctx,"⚙️ *TRADE SETUP*\n\nConfigure your rules before receiving trading calls.\n\n💰 Buy Amount "+(u.buy_amount?"✅":"❌")+"\n🎯 Take Profit "+(u.tp_config?"✅":"❌")+"\n🛑 Stop Loss "+(u.sl_percent?"✅":"❌")+"\n🔎 Filters "+(u.filters?"✅":"❌")+"\n🔔 Alerts "+(u.alerts?"✅":"❌")+"\n💰 Wallet "+(wallet.rowCount?"CREATED — BALANCE UNVERIFIED":"❌ NOT SET UP"),{parse_mode:"Markdown",reply_markup:setupKb()}); }
 
 bot.command("start",async ctx=>{if(!ctx.from)return;const u=await user(ctx.from.id,ctx.from.username); if(u.onboarding_complete) return menu(ctx); await show(ctx,"🤖 *TRADE AUTOPILOT*\n\nYour Telegram trading assistant for qualified calls and automated execution.\n\n🎯 *AUTOPILOT* — qualified calls can be executed automatically.\n\n✋ *MANUAL* — review each call before execution.\n\nSet your trade rules, filters and alerts before trading begins.\n\nChoose your mode:",{parse_mode:"Markdown",reply_markup:modeKb()});});
-bot.command("menu",menu);
+bot.command("menu",menu);\nbot.command("admin_test", async ctx=>{ await ctx.deleteMessage().catch(()=>{}); await notifyAdmin(bot,"system_error",{message:"Admin notification test",telegram_id:ctx.from.id}); });
 bot.command("mode",async ctx=>show(ctx,"🎯 *TRADING MODE*\n\nChoose how you want the bot to operate.",{parse_mode:"Markdown",reply_markup:modeKb()}));
 
 bot.callbackQuery("mode:auto",async ctx=>{await ctx.answerCallbackQuery();await patch(ctx.from.id,{mode:"autopilot",onboarding_complete:true});await show(ctx,"🎯 *AUTOPILOT*\n\nQualified calls that pass your filters and safety checks can be executed automatically.\n\nNothing starts until your setup is complete.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("⚙️ SET UP AUTOPILOT","setup").row().text("⬅️ BACK","start").text("🏠 MAIN MENU","menu")});});
