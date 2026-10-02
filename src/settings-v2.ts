@@ -8,7 +8,7 @@ type Deps = {
   patch: (id: number, fields: Record<string, unknown>) => Promise<any>;
 };
 
-type StrategyConfig = {
+export type StrategyConfig = {
   profile: "shield" | "balanced" | "momentum" | "degen";
   customized: boolean;
   version: number;
@@ -173,6 +173,63 @@ function summary(c: StrategyConfig) {
     "SL " + e.stopLossPct + "%",
     "Trailing " + (e.trailing.enabled ? "ON" : "OFF")
   ].join("\n");
+}
+
+export type CandidateMetrics = {
+  marketCapUsd: number | null;
+  liquidityUsd: number | null;
+  volume5mUsd: number | null;
+  ageSec: number | null;
+  holders: number | null;
+  top10Pct: number | null;
+  devPct: number | null;
+  marketType: "new_launch" | "pre_bond" | null;
+};
+
+export type QualificationResult = {
+  qualified: boolean;
+  status: "PASS" | "FAIL" | "UNKNOWN";
+  reasons: string[];
+  unknown: string[];
+};
+
+export function evaluateCandidate(config: StrategyConfig, token: CandidateMetrics): QualificationResult {
+  const d = config.discovery;
+  const reasons: string[] = [];
+  const unknown: string[] = [];
+
+  const required = [
+    ["market cap", token.marketCapUsd, (v:number) => v >= d.marketCapMin && (d.marketCapMax == null || v <= d.marketCapMax)],
+    ["liquidity", token.liquidityUsd, (v:number) => v >= d.liquidityMin],
+    ["5m volume", token.volume5mUsd, (v:number) => v >= d.volume5mMin],
+    ["token age", token.ageSec, (v:number) => v >= d.tokenAgeMinSec],
+    ["holders", token.holders, (v:number) => v >= d.holderMin],
+    ["top 10 concentration", token.top10Pct, (v:number) => v <= d.top10Max],
+    ["developer holdings", token.devPct, (v:number) => v <= d.devMax]
+  ] as const;
+
+  for (const [name, value, test] of required) {
+    if (value == null || !Number.isFinite(value)) {
+      unknown.push(name);
+      continue;
+    }
+    if (!test(value)) reasons.push(name + " failed");
+  }
+
+  if (!token.marketType) unknown.push("market type");
+  else if (!d.marketTypes.includes(token.marketType)) reasons.push("market type not allowed");
+
+  if (d.strictData && unknown.length) {
+    return { qualified: false, status: "UNKNOWN", reasons, unknown };
+  }
+  if (reasons.length) return { qualified: false, status: "FAIL", reasons, unknown };
+  if (unknown.length) return { qualified: false, status: "UNKNOWN", reasons, unknown };
+  return { qualified: true, status: "PASS", reasons: [], unknown: [] };
+}
+
+export async function getSavedStrategyConfig(pool: any, telegramId: number): Promise<StrategyConfig> {
+  const r = await pool.query("SELECT strategy_config FROM public.users WHERE telegram_id=$1", [telegramId]);
+  return normalize(r.rows[0]?.strategy_config);
 }
 
 async function load(deps: Deps, id: number) {
