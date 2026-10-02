@@ -117,7 +117,7 @@ function mapCandidate(raw:any,ov:any,security:Security):Candidate {
     liquidity:n(pick(ov,"liquidity","liquidity_usd")), volume5m:n(v5),
     createdAt:Number.isFinite(createdAt as number)?createdAt:null,
     holders:n(pick(ov,"holder","holders","holder_count")), top10:n(pick(ov,"top10_holder_percent","top10","top_10_holder_pct")),
-    devPct:n(pick(ov,"creator_percentage","creator_percent","dev_percent")), source:{listing:raw,overview:ov}
+    devPct:n(pick(ov,"creator_percentage","creator_percent","dev_percent")), security, source:{listing:raw,overview:ov}
   };
 }
 
