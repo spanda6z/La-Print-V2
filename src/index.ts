@@ -6,6 +6,7 @@ import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.j
 import bs58 from "bs58";
 import { registerStrategySettings } from "./settings-v2";
 import { notifyAdmin } from "./admin-notifications";
+import { registerAdminConsole, ensureAdminAuditTable } from "./admin-console";
 
 const { Pool } = pg;
 const token = process.env.BOT_TOKEN ?? process.env.TELEGRAM_BOT_TOKEN;
@@ -391,9 +392,11 @@ bot.on("message:text",async ctx=>{
   }
 });
 registerStrategySettings({ bot, pool, show, user, patch });
+registerAdminConsole({ bot, pool, show });
 
 bot.catch(e=>console.error("BOT_ERROR",e.error));
 await init();
+await ensureAdminAuditTable(pool);
 await databaseSmokeTest();
 await bot.api.setMyCommands([{command:"start",description:"Open LaPrint"},{command:"menu",description:"Main menu"},{command:"setup",description:"Trading setup"},{command:"mode",description:"Switch mode"}]);
 console.log("LaPrint V2 starting. ENGINE_MODE="+(process.env.ENGINE_MODE||"disabled"));
