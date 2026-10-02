@@ -67,6 +67,16 @@ async function init() {
       encryption_tag TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS public.trade_config_snapshots (
+      id BIGSERIAL PRIMARY KEY,
+      telegram_id BIGINT NOT NULL REFERENCES public.users(telegram_id) ON DELETE CASCADE,
+      strategy_profile TEXT NOT NULL,
+      strategy_version INTEGER NOT NULL,
+      config JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS trade_config_snapshots_user_created_idx
+      ON public.trade_config_snapshots(telegram_id, created_at DESC);
     CREATE TABLE IF NOT EXISTS public.notification_events (
       telegram_id BIGINT NOT NULL, event_key TEXT NOT NULL,
       created_at TIMESTAMPTZ DEFAULT NOW(),
