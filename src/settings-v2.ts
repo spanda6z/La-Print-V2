@@ -381,8 +381,7 @@ export function registerStrategySettings(deps: Deps) {
     await deps.show(ctx, "✅ *5M VOLUME SAVED*\n\nMinimum: " + fmtUsd(saved.discovery.volume5mMin) + "+", {parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔎 DISCOVERY","v2:discovery").text("⚙️ SETTINGS","v2:settings")});
   });
 
-  bot.callbackQuery(/^v2:set:liq:(3000|5000|10000|20000)$/, async (ctx: any) => {});
-  bot.callbackQuery("v2:apply", async (ctx: any) => {
+    bot.callbackQuery("v2:apply", async (ctx: any) => {
     await ctx.answerCallbackQuery();
     const pending = ctx.session.v2pending;
     if (!pending) return openStrategySettings(ctx, deps);
