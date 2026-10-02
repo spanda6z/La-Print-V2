@@ -4,6 +4,7 @@ import pg from "pg";
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 import bs58 from "bs58";
+import { registerStrategySettings } from "./settings-v2";
 
 const { Pool } = pg;
 const token = process.env.BOT_TOKEN ?? process.env.TELEGRAM_BOT_TOKEN;
@@ -51,6 +52,10 @@ async function init() {
     ALTER TABLE public.users ADD COLUMN IF NOT EXISTS wallet_balance NUMERIC NOT NULL DEFAULT 0;
     ALTER TABLE public.users ADD COLUMN IF NOT EXISTS funding_prompt_sent BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE public.users ADD COLUMN IF NOT EXISTS trading_active BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS strategy_profile TEXT NOT NULL DEFAULT 'balanced';
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS strategy_customized BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS strategy_version INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS strategy_config JSONB;
     ALTER TABLE public.users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
     ALTER TABLE public.users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
     CREATE UNIQUE INDEX IF NOT EXISTS users_telegram_id_uidx ON public.users(telegram_id);
@@ -199,7 +204,7 @@ async function once(id:number,key:string) {
 const back = (target="setup") => new InlineKeyboard().text("⬅️ BACK",target).text("🏠 MAIN MENU","menu");
 const modeKb = () => new InlineKeyboard().text("🎯 AUTOPILOT","mode:auto").text("✋ MANUAL","mode:manual");
 const setupKb = () => new InlineKeyboard().text("💰 BUY AMOUNT","setup:buy").text("🎯 TAKE PROFIT","setup:tp").row().text("🛑 STOP LOSS","setup:sl").text("🔎 FILTERS","setup:filters").row().text("🔔 ALERTS","setup:alerts").text("💰 WALLET","wallet:setup").row().text("👀 REVIEW","review").row().text("⬅️ BACK","mode:back").text("🏠 MAIN MENU","menu");
-const mainKb = (active:boolean,mode:string) => { const k=new InlineKeyboard().text(mode==="manual"?"▶️ START FEED":"🚀 START","trade:start").text("📊 POSITIONS","positions").row().text("📡 ACTIVITY","activity").text("🔔 ALERTS","alerts").row().text("⚙️ SETTINGS","setup").text("💰 WALLET","wallet").row(); if(active) k.text(mode==="manual"?"⏹️ STOP FEED":"⏹️ STOP AUTOPILOT","trade:stop"); return k; };
+const mainKb = (active:boolean,mode:string) => { const k=new InlineKeyboard().text(mode==="manual"?"▶️ START FEED":"🚀 START","trade:start").text("📊 POSITIONS","positions").row().text("📡 ACTIVITY","activity").text("🔔 ALERTS","alerts").row().text("⚙️ SETTINGS","settings:v2").text("💰 WALLET","wallet").row(); if(active) k.text(mode==="manual"?"⏹️ STOP FEED":"⏹️ STOP AUTOPILOT","trade:stop"); return k; };
 const buyKb=()=>new InlineKeyboard().text("0.01 SOL","buy:0.01").text("0.05 SOL","buy:0.05").row().text("0.10 SOL","buy:0.10").text("0.25 SOL","buy:0.25").row().text("✏️ CUSTOM","buy:custom").row().text("⬅️ BACK","setup");
 const tpKb=()=>new InlineKeyboard().text("⚡ SIMPLE TP","tp:simple").text("🧠 PARTIAL EXITS","tp:partial").row().text("⬅️ BACK","setup");
 const slKb=()=>new InlineKeyboard().text("-10%","sl:-10").text("-15%","sl:-15").row().text("-20%","sl:-20").text("-25%","sl:-25").row().text("✏️ CUSTOM","sl:custom").row().text("⬅️ BACK","setup");
@@ -211,14 +216,14 @@ async function menu(ctx:Ctx){ const u=await user(ctx.from!.id,ctx.from!.username
 async function setup(ctx:Ctx){ const u=await user(ctx.from!.id,ctx.from!.username); const wallet=await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[ctx.from!.id]); await show(ctx,"⚙️ *TRADE SETUP*\n\nConfigure your rules before receiving trading calls.\n\n💰 Buy Amount "+(u.buy_amount?"✅":"❌")+"\n🎯 Take Profit "+(u.tp_config?"✅":"❌")+"\n🛑 Stop Loss "+(u.sl_percent?"✅":"❌")+"\n🔎 Filters "+(u.filters?"✅":"❌")+"\n🔔 Alerts "+(u.alerts?"✅":"❌")+"\n💰 Wallet "+(wallet.rowCount?"CREATED — BALANCE UNVERIFIED":"❌ NOT SET UP"),{parse_mode:"Markdown",reply_markup:setupKb()}); }
 
 bot.command("start",async ctx=>{if(!ctx.from)return;const u=await user(ctx.from.id,ctx.from.username); if(u.onboarding_complete) return menu(ctx); await show(ctx,"🤖 *TRADE AUTOPILOT*\n\nYour Telegram trading assistant for qualified calls and automated execution.\n\n🎯 *AUTOPILOT* — qualified calls can be executed automatically.\n\n✋ *MANUAL* — review each call before execution.\n\nSet your trade rules, filters and alerts before trading begins.\n\nChoose your mode:",{parse_mode:"Markdown",reply_markup:modeKb()});});
-bot.command("menu",menu); bot.command("setup",setup);
+bot.command("menu",menu);
 bot.command("mode",async ctx=>show(ctx,"🎯 *TRADING MODE*\n\nChoose how you want the bot to operate.",{parse_mode:"Markdown",reply_markup:modeKb()}));
 
 bot.callbackQuery("mode:auto",async ctx=>{await ctx.answerCallbackQuery();await patch(ctx.from.id,{mode:"autopilot",onboarding_complete:true});await show(ctx,"🎯 *AUTOPILOT*\n\nQualified calls that pass your filters and safety checks can be executed automatically.\n\nNothing starts until your setup is complete.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("⚙️ SET UP AUTOPILOT","setup").row().text("⬅️ BACK","start").text("🏠 MAIN MENU","menu")});});
 bot.callbackQuery("mode:manual",async ctx=>{await ctx.answerCallbackQuery();await patch(ctx.from.id,{mode:"manual",onboarding_complete:true});await show(ctx,"✋ *MANUAL*\n\nYou will receive qualified calls that match your filters and decide whether each trade executes.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("⚙️ SET UP MANUAL","setup").row().text("⬅️ BACK","start").text("🏠 MAIN MENU","menu")});});
 bot.callbackQuery("start",async ctx=>{await ctx.answerCallbackQuery();await show(ctx,"🤖 *TRADE AUTOPILOT*\n\nChoose your mode:",{parse_mode:"Markdown",reply_markup:modeKb()});});
 bot.callbackQuery("mode:back",async ctx=>{await ctx.answerCallbackQuery();await show(ctx,"🎯 *TRADING MODE*\n\nChoose how you want the bot to operate.",{parse_mode:"Markdown",reply_markup:modeKb()});});
-bot.callbackQuery("setup",async ctx=>{await ctx.answerCallbackQuery();ctx.session.input=undefined;await setup(ctx);}); bot.callbackQuery("menu",async ctx=>{await ctx.answerCallbackQuery();ctx.session.input=undefined;await menu(ctx);});
+ bot.callbackQuery("menu",async ctx=>{await ctx.answerCallbackQuery();ctx.session.input=undefined;await menu(ctx);});
 
 bot.callbackQuery("setup:buy",async ctx=>{await ctx.answerCallbackQuery();await show(ctx,"💰 *BUY AMOUNT*\n\nHow much SOL should each trade use?",{parse_mode:"Markdown",reply_markup:buyKb()});});
 bot.callbackQuery(/^buy:(.+)$/,async ctx=>{await ctx.answerCallbackQuery();const v=ctx.match[1];if(v==="custom"){ctx.session.input="buy";return show(ctx,"✏️ Enter the SOL amount. Example: 0.05",{reply_markup:new InlineKeyboard().text("↩️ RETURN TO SETUP","setup")});}await patch(ctx.from.id,{buy_amount:Number(v)});await show(ctx,"✅ *BUY AMOUNT SAVED*\n\nTrade size: "+v+" SOL",{parse_mode:"Markdown",reply_markup:setupKb()});});
@@ -374,6 +379,8 @@ bot.on("message:text",async ctx=>{
     await patch(ctx.from.id,{tp_config:{type:"simple",targets:[{pct:v,sellPct:100}]}});ctx.session.input=undefined;return show(ctx,"✅ TAKE PROFIT SAVED\n\n+"+v+"% → sell 100%",{reply_markup:setupKb()});
   }
 });
+registerStrategySettings({ bot, pool, show, user, patch });
+
 bot.catch(e=>console.error("BOT_ERROR",e.error));
 await init();
 await databaseSmokeTest();
