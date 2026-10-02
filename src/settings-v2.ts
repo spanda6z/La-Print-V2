@@ -1,5 +1,5 @@
 import { InlineKeyboard } from "grammy";
-import { notifyAdmin } from "./admin-notifications";
+import { notifyAdmin } from "./admin-notifications.js";
 
 type Deps = {
   bot: any;
@@ -34,7 +34,7 @@ export type StrategyConfig = {
   };
 };
 
-const PRESETS: Record<string, Omit<StrategyConfig, "version" | "customized">> = {
+const PRESETS: Record<string, Omit<StrategyConfig, "version">> = {
   shield: {
     profile: "shield",
     customized: false,
