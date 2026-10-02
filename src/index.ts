@@ -8,6 +8,7 @@ import { registerStrategySettings } from "./settings-v2.js";
 import { notifyAdmin } from "./admin-notifications.js";
 import { registerAdminConsole, ensureAdminAuditTable, recordAdminEvent } from "./admin-console.js";
 import { registerMultiWallets, ensureMultiWalletSchema } from "./multi-wallets.js";
+import { ensureEngineSchema, startEngine } from "./engine.js";
 
 const { Pool } = pg;
 const token = process.env.BOT_TOKEN ?? process.env.TELEGRAM_BOT_TOKEN;
@@ -101,6 +102,7 @@ async function init() {
   }
   console.log("[db] schema ready", JSON.stringify(state));
   await ensureMultiWalletSchema(pool);
+  await ensureEngineSchema(pool);
 }
 
 async function databaseSmokeTest() {
@@ -442,6 +444,7 @@ await ensureAdminAuditTable(pool);
 await databaseSmokeTest();
 await bot.api.setMyCommands([{command:"start",description:"Open LaPrint"},{command:"menu",description:"Main menu"},{command:"setup",description:"Trading setup"},{command:"mode",description:"Switch mode"},{command:"wallets",description:"Manage trading wallets"}]);
 console.log("LaPrint V2 starting. ENGINE_MODE="+(process.env.ENGINE_MODE||"disabled"));
+const stopEngine = startEngine(pool,bot);
 const pollingClient = await acquireTelegramPollingLock();
 let shuttingDown = false;
 const shutdown = async (signal: string) => {
@@ -449,6 +452,7 @@ const shutdown = async (signal: string) => {
   shuttingDown = true;
   console.log("[shutdown] received " + signal);
   bot.stop();
+  stopEngine();
   try { await pollingClient.query("SELECT pg_advisory_unlock($1)", [TELEGRAM_POLL_LOCK]); } catch {}
   pollingClient.release();
   await pool.end();
