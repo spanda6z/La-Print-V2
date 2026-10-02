@@ -17,10 +17,12 @@ type Strategy = {
     trailing?: {enabled:boolean;activationPct:number;pullbackPct:number};
   };
 };
+type SecurityState = "ACTIVE" | "REVOKED" | "UNKNOWN";
+type Security = { mintAuthority: SecurityState; freezeAuthority: SecurityState; verified: boolean; source: string };
 type Candidate = {
   address:string; symbol:string; name:string; price:number|null; marketCap:number|null;
   liquidity:number|null; volume5m:number|null; createdAt:number|null; holders:number|null;
-  top10:number|null; devPct:number|null; source:any;
+  top10:number|null; devPct:number|null; security:Security; source:any;
 };
 const SOL = "So11111111111111111111111111111111111111112";
 const now = () => new Date();
@@ -78,13 +80,32 @@ async function discoverBirdeye():Promise<any[]> {
   return Array.isArray(data)?data:(data?.items||data?.tokens||[]);
 }
 
+async function mintSecurity(address:string):Promise<Security> {
+  const rpc=process.env.SOLANA_RPC_URL;
+  if(!rpc) return {mintAuthority:"UNKNOWN",freezeAuthority:"UNKNOWN",verified:false,source:"rpc_unconfigured"};
+  try {
+    const res=await fetch(rpc,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({
+      jsonrpc:"2.0",id:1,method:"getAccountInfo",params:[address,{encoding:"jsonParsed",commitment:"confirmed"}]
+    }),signal:AbortSignal.timeout(10000)});
+    const body=await res.json().catch(()=>({}));
+    const info=body?.result?.value?.data?.parsed?.info;
+    if(body?.error || !info) return {mintAuthority:"UNKNOWN",freezeAuthority:"UNKNOWN",verified:false,source:"solana_rpc"};
+    const state=(v:any):SecurityState=>v===null?"REVOKED":typeof v==="string"&&v.length>0?"ACTIVE":"UNKNOWN";
+    const mintAuthority=state(info.mintAuthority);
+    const freezeAuthority=state(info.freezeAuthority);
+    return {mintAuthority,freezeAuthority,verified:mintAuthority!=="UNKNOWN"&&freezeAuthority!=="UNKNOWN",source:"solana_rpc"};
+  } catch {
+    return {mintAuthority:"UNKNOWN",freezeAuthority:"UNKNOWN",verified:false,source:"solana_rpc"};
+  }
+}
+
 async function overview(address:string):Promise<any> {
   const key=process.env.BIRDEYE_API_KEY!;
   const base=process.env.BIRDEYE_API_BASE || "https://public-api.birdeye.so";
   return apiJson(base+"/defi/token_overview?address="+encodeURIComponent(address),authHeaders(key));
 }
 
-function mapCandidate(raw:any,ov:any):Candidate {
+function mapCandidate(raw:any,ov:any,security:Security):Candidate {
   const address=String(pick(raw,"address","token_address","mint")||pick(ov,"address","token_address")||"");
   const created=pick(raw,"created_at","creation_time","listed_at","createdAt");
   const createdAt=created==null?null:(typeof created==="number"?(created<1e12?created*1000:created):Date.parse(String(created)));
@@ -142,7 +163,7 @@ async function scanOnce(pool:Pool) {
     const address=String(pick(item,"address","token_address","mint")||"");
     if(!address) continue;
     try{
-      const ov=await overview(address),c=mapCandidate(item,ov);
+      const ov=await overview(address),security=await mintSecurity(address),c=mapCandidate(item,ov,security);
       if(!c.address)continue;
       let anyQualified=false,reasons:string[]=[];
       for(const u of users.rows){
