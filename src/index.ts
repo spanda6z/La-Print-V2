@@ -414,7 +414,8 @@ async function renderScanner(ctx:Ctx,status:"all"|"qualified"|"rejected"="all",o
   const text="🔎 DISCOVER\n\nSCANNER: "+(process.env.SCANNER_MODE==="enabled"?"🟢 ACTIVE":"⚪ OFF")+"\nVIEW: "+status.toUpperCase()+"\n\n"+
     "Total evaluated: "+c.total+"\n🟢 Qualified: "+c.qualified+"\n⚪ Rejected: "+c.rejected+"\n\n"+
     (lines.length?lines.join("\n\n"):"No evaluated candidates yet.\n\nThe scanner only shows verified Birdeye discovery data; it does not create buy signals.");
-  const keyboard=scannerKeyboard(status,offset);\n  for(const item of data.items) keyboard.row().text("🔎 "+(item.symbol||"TOKEN"),"scanner:token:"+item.address);\n  return show(ctx,text,{reply_markup:keyboard});
+  const keyboard=scannerKeyboard(status,offset);
+  for(const item of data.items) keyboard.row().text("🔎 "+(item.symbol||"TOKEN"),"scanner:token:"+item.address);\n  return show(ctx,text,{reply_markup:keyboard});
 }
 bot.callbackQuery("discover",async ctx=>{await ctx.answerCallbackQuery();return renderScanner(ctx);});
 bot.callbackQuery("scanner:refresh",async ctx=>{await ctx.answerCallbackQuery("Refreshing scanner…");return renderScanner(ctx);});
