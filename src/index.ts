@@ -8,7 +8,7 @@ import { registerStrategySettings } from "./settings-v2.js";
 import { notifyAdmin } from "./admin-notifications.js";
 import { registerAdminConsole, ensureAdminAuditTable, recordAdminEvent } from "./admin-console.js";
 import { registerMultiWallets, ensureMultiWalletSchema } from "./multi-wallets.js";
-import { ensureEngineSchema, startEngine } from "./engine.js";
+import { ensureEngineSchema, startEngine, getScannerView, getScannerToken } from "./engine.js";
 
 const { Pool } = pg;
 const token = process.env.BOT_TOKEN ?? process.env.TELEGRAM_BOT_TOKEN;
@@ -390,7 +390,47 @@ bot.callbackQuery("activity",async ctx=>{await ctx.answerCallbackQuery();await s
 
 bot.callbackQuery("quickbuy",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,"⚡ QUICK BUY\\n\\nChoose a preset trade size.",{reply_markup:buyKb()});});
 bot.callbackQuery("strategy",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,"🎯 STRATEGY\\n\\nChoose your trading profile.",{reply_markup:new InlineKeyboard().text("🛡 Shield","strategy:shield").text("⚖️ Balanced","strategy:balanced").row().text("⚡ Momentum","strategy:momentum").text("🔥 Degen","strategy:degen").row().text("🏠 MAIN MENU","menu")});});
-bot.callbackQuery("discover",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,"🔎 DISCOVER\\n\\nMarket discovery is not connected yet. No fake markets are shown.",{reply_markup:new InlineKeyboard().text("🔄 REFRESH","discover").row().text("🏠 MAIN MENU","menu")});});
+function scannerMarketData(row:any){
+  const md=row?.market_data||{};
+  const ov=md.overview||{};
+  const listing=md.listing||{};
+  const pick=(...keys:string[])=>{for(const k of keys){const v=ov?.[k]??listing?.[k];if(v!==undefined&&v!==null)return v;}return null;};
+  return {price:pick("price","price_usd"),marketCap:pick("mc","market_cap","marketCap"),liquidity:pick("liquidity","liquidity_usd"),volume5m:pick("volume_5m_usd","v5m","volume5m"),holders:pick("holder","holders","holder_count"),top10:pick("top10_holder_percent","top10","top_10_holder_pct"),dev:pick("creator_percentage","creator_percent","dev_percent")};
+}
+function scannerMoney(v:any){const n=Number(v);return Number.isFinite(n)?"$"+Math.round(n).toLocaleString():"—";}
+function scannerNum(v:any){const n=Number(v);return Number.isFinite(n)?n.toLocaleString():"—";}
+function scannerKeyboard(status:"all"|"qualified"|"rejected",offset:number){
+  const k=new InlineKeyboard().text("🟢 QUALIFIED","scanner:qualified:0").text("⚪ REJECTED","scanner:rejected:0")
+    .row().text("🔄 REFRESH","scanner:refresh").text("🏠 MAIN MENU","menu")
+    .row().text("⬅️ PREVIOUS","scanner:page:"+status+":"+Math.max(0,offset-5)).text("NEXT ➡️","scanner:page:"+status+":"+(offset+5));
+  return k;
+}
+async function renderScanner(ctx:Ctx,status:"all"|"qualified"|"rejected"="all",offset=0){
+  const data=await getScannerView(pool,ctx.from!.id,status,offset),c=data.counts;
+  const lines=data.items.map((x:any,i:number)=>{
+    const m=scannerMarketData(x),state=x.status==="qualified"?"🟢 QUALIFIED":"⚪ REJECTED";
+    return (i+1)+". "+state+"  "+(x.symbol||"UNKNOWN")+"\n   MC "+scannerMoney(m.marketCap)+" · LP "+scannerMoney(m.liquidity)+" · 5m "+scannerMoney(m.volume5m)+"\n   "+(x.reject_reason||"Matches your saved strategy")+"\n   🔎 "+x.address;
+  });
+  const text="🔎 DISCOVER\n\nSCANNER: "+(process.env.SCANNER_MODE==="enabled"?"🟢 ACTIVE":"⚪ OFF")+"\nVIEW: "+status.toUpperCase()+"\n\n"+
+    "Total evaluated: "+c.total+"\n🟢 Qualified: "+c.qualified+"\n⚪ Rejected: "+c.rejected+"\n\n"+
+    (lines.length?lines.join("\n\n"):"No evaluated candidates yet.\n\nThe scanner only shows verified Birdeye discovery data; it does not create buy signals.");
+  return show(ctx,text,{reply_markup:scannerKeyboard(status,offset)});
+}
+bot.callbackQuery("discover",async ctx=>{await ctx.answerCallbackQuery();return renderScanner(ctx);});
+bot.callbackQuery("scanner:refresh",async ctx=>{await ctx.answerCallbackQuery("Refreshing scanner…");return renderScanner(ctx);});
+bot.callbackQuery(/^scanner:(qualified|rejected):0$/,async ctx=>{await ctx.answerCallbackQuery();return renderScanner(ctx,ctx.match[1] as "qualified"|"rejected",0);});
+bot.callbackQuery(/^scanner:page:(all|qualified|rejected):(\\d+)$/,async ctx=>{await ctx.answerCallbackQuery();return renderScanner(ctx,ctx.match[1] as "all"|"qualified"|"rejected",Number(ctx.match[2]));});
+bot.callbackQuery(/^scanner:token:([1-9A-HJ-NP-Za-km-z]{32,44})$/,async ctx=>{
+  await ctx.answerCallbackQuery();
+  const row=await getScannerToken(pool,ctx.from.id,ctx.match[1]);
+  if(!row)return show(ctx,"🔎 TOKEN\n\nThis candidate is no longer in your scanner results.",{reply_markup:new InlineKeyboard().text("⬅️ DISCOVER","discover").text("🏠 MAIN MENU","menu")});
+  const m=scannerMarketData(row);
+  const text="🔎 "+(row.symbol||"UNKNOWN")+"\n\n"+(row.name||"Unknown token")+"\n\n"+
+    "Status: "+(row.status==="qualified"?"🟢 QUALIFIED":"⚪ REJECTED")+"\nStrategy: "+(row.strategy_profile||"balanced")+"\nAddress:\n"+row.address+"\n\n"+
+    "MC: "+scannerMoney(m.marketCap)+"\nLiquidity: "+scannerMoney(m.liquidity)+"\n5m Volume: "+scannerMoney(m.volume5m)+"\nHolders: "+scannerNum(m.holders)+"\nTop 10: "+(m.top10===null?"—":m.top10+"%")+"\nDev: "+(m.dev===null?"—":m.dev+"%")+"\nPrice: "+(m.price===null?"—":String(m.price))+"\n\n"+
+    (row.reject_reason?"Reason: "+row.reject_reason:"Result: matches the saved discovery filters.")+"\n\nQualification is not a buy signal. Security fields are shown only when the upstream data provides them.";
+  return show(ctx,text,{reply_markup:new InlineKeyboard().text("⬅️ DISCOVER","discover").text("🏠 MAIN MENU","menu")});
+});
 bot.callbackQuery("performance",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,"📈 PERFORMANCE\\n\\nLive PnL and execution performance are not connected yet. No fabricated figures are shown.",{reply_markup:new InlineKeyboard().text("🔄 REFRESH","performance").row().text("🏠 MAIN MENU","menu")});});
 bot.callbackQuery("referrals",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,"💰 REFERRALS\\n\\nYour LaPrint referral tools will appear here once the referral system is connected.",{reply_markup:new InlineKeyboard().text("🏠 MAIN MENU","menu")});});
 bot.callbackQuery("about",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,"ℹ️ LA-PRINT TRADE 🤖\\n\\nTelegram-native trading automation.\\n\\nLive execution stays blocked until the required services are verified.",{reply_markup:new InlineKeyboard().text("🏠 MAIN MENU","menu")});});
