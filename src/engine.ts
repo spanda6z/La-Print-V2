@@ -181,6 +181,58 @@ export async function getEngineSnapshot(pool:Pool,telegramId:number) {
   return {candidates:c.rows[0],positions:p.rows[0],events:e.rows};
 }
 
+
+export type SwapResult = { signature:string; inputAmount:string; outputAmount:string; quote:any };
+
+export async function executeJupiterSwap(args:{
+  pool:Pool; telegramId:number; inputMint:string; outputMint:string;
+  amountAtomic:string; slippageBps?:number; side:"buy"|"sell";
+}):Promise<SwapResult>{
+  if(process.env.ENGINE_MODE!=="enabled" || process.env.LIVE_TRADING!=="true" ||
+     process.env.LIVE_TRADING_ACK!=="I_ACCEPT_REAL_SOLANA_TRANSACTIONS")
+    throw new Error("Live execution safety gate is not enabled.");
+  const apiKey=process.env.JUPITER_API_KEY;
+  const rpcUrl=process.env.SOLANA_RPC_URL;
+  if(!apiKey||!rpcUrl)throw new Error("JUPITER_API_KEY and SOLANA_RPC_URL are required.");
+  const wallet=await getActiveTradingWallet(args.pool,args.telegramId);
+  if(!wallet)throw new Error("No active trading wallet.");
+  const connection=new Connection(rpcUrl,"confirmed");
+  const amount=BigInt(args.amountAtomic);
+  if(amount<=0n)throw new Error("Swap amount must be positive.");
+  if(args.side==="buy"){
+    const maxSol=Number(process.env.MAX_BUY_SOL||"0.1");
+    if(args.inputMint!==SOL || Number(amount)/LAMPORTS_PER_SOL>maxSol)
+      throw new Error("Buy exceeds configured SOL cap or does not use SOL as input.");
+    const balance=await connection.getBalance(wallet.keypair.publicKey,"confirmed");
+    if(balance<Number(amount)+10_000_000)throw new Error("Insufficient SOL for trade plus network fees.");
+  }
+  const base=process.env.JUPITER_API_BASE||"https://api.jup.ag";
+  const headers={"x-api-key":apiKey,accept:"application/json","content-type":"application/json"};
+  const quoteUrl=base+"/swap/v1/quote?inputMint="+encodeURIComponent(args.inputMint)+
+    "&outputMint="+encodeURIComponent(args.outputMint)+"&amount="+amount.toString()+
+    "&slippageBps="+String(args.slippageBps??100)+"&restrictIntermediateTokens=true";
+  const quoteRes=await fetch(quoteUrl,{headers,signal:AbortSignal.timeout(15000)});
+  const quote=await quoteRes.json().catch(()=>({}));
+  if(!quoteRes.ok||!quote?.outAmount)throw new Error("Jupiter quote failed: "+JSON.stringify(quote).slice(0,300));
+  const swapRes=await fetch(base+"/swap/v1/swap",{method:"POST",headers,body:JSON.stringify({
+    quoteResponse:quote,userPublicKey:wallet.keypair.publicKey.toBase58(),
+    wrapAndUnwrapSol:true,dynamicComputeUnitLimit:true,prioritizationFeeLamports:"auto"
+  }),signal:AbortSignal.timeout(20000)});
+  const swap=await swapRes.json().catch(()=>({}));
+  if(!swapRes.ok||!swap?.swapTransaction)throw new Error("Jupiter transaction build failed: "+JSON.stringify(swap).slice(0,300));
+  const tx=VersionedTransaction.deserialize(Buffer.from(swap.swapTransaction,"base64"));
+  tx.sign([wallet.keypair]);
+  const sim=await connection.simulateTransaction(tx,{sigVerify:true,commitment:"processed"});
+  if(sim.value.err)throw new Error("Transaction simulation failed: "+JSON.stringify(sim.value.err));
+  if(process.env.LIVE_TRADING_SIMULATION_ONLY==="true")throw new Error("Simulation-only mode: transaction was not broadcast.");
+  const signature=await connection.sendTransaction(tx,{skipPreflight:false,maxRetries:2,preflightCommitment:"confirmed"});
+  const latest=await connection.getLatestBlockhash("confirmed");
+  const confirmation=await connection.confirmTransaction({signature,blockhash:latest.blockhash,lastValidBlockHeight:latest.lastValidBlockHeight},"confirmed");
+  if(confirmation.value.err)throw new Error("On-chain transaction failed: "+JSON.stringify(confirmation.value.err));
+  await saveEvent(args.pool,args.telegramId,"swap_confirmed",args.outputMint,{side:args.side,signature,inputAmount:quote.inAmount,outputAmount:quote.outAmount,wallet:wallet.publicKey});
+  return {signature,inputAmount:String(quote.inAmount),outputAmount:String(quote.outAmount),quote};
+}
+
 export function engineReadiness() {
   return {
     mode:process.env.ENGINE_MODE||"disabled",
