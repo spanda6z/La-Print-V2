@@ -1,5 +1,5 @@
 import { InlineKeyboard } from "grammy";
-import { getAdminIds, notifyAdmin } from "./admin-notifications";
+import { getAdminIds, notifyAdmin } from "./admin-notifications.js";
 
 type AdminDeps = { bot: any; pool: any; show: Function };
 
