@@ -221,7 +221,25 @@ async function once(id:number,key:string) {
 const back = (target="setup") => new InlineKeyboard().text("⬅️ BACK",target).text("🏠 MAIN MENU","menu");
 const modeKb = () => new InlineKeyboard().text("🎯 AUTOPILOT","mode:auto").text("✋ MANUAL","mode:manual");
 const setupKb = () => new InlineKeyboard().text("💰 Buy amount","setup:buy").text("🎯 Take profit","setup:tp").row().text("🛑 Stop loss","setup:sl").text("🔎 Market filters","setup:filters").row().text("🔔 Alerts","setup:alerts").text("👛 Wallets","wallets").row().text("🧾 Review","review").row().text("‹ Back","mode:back").text("⌂ Menu","menu");
-const mainKb = (active:boolean,mode:string) => { const k=new InlineKeyboard().text(terminalAction(mode==="manual"?"Start feed":"Start","success"),"trade:start").row().text("📊 Positions","positions").text("📡 Activity","activity").row().text("🔔 Alerts","alerts").text("⚙️ Settings","settings:v2").row().text("👛 Wallets","wallets"); if(active) k.row().text(terminalAction(mode==="manual"?"Stop feed":"Stop autopilot","danger"),"trade:stop"); return k; };
+const mainKb = (active:boolean,mode:string) => {
+  const k = new InlineKeyboard()
+    .text(terminalAction(active ? (mode==="manual"?"Stop feed":"Stop autopilot") : "Start trading", active ? "danger" : "success"), active ? "trade:stop" : "trade:start")
+    .row()
+    .text("📊 Positions","positions").text("⚡ Quick Buy","quickbuy")
+    .row()
+    .text("🎯 Strategy","strategy")
+    .row()
+    .text("👛 Wallets","wallets").text("📡 Activity","activity")
+    .row()
+    .text("🔎 Discover","discover")
+    .row()
+    .text("🔔 Alerts","alerts").text("📈 Performance","performance")
+    .row()
+    .text("⚙️ Settings","settings:v2")
+    .row()
+    .text("💰 Referrals","referrals").text("ℹ️ About","about");
+  return k;
+};
 const buyKb=()=>new InlineKeyboard().text("0.01 SOL","buy:0.01").text("0.05 SOL","buy:0.05").row().text("0.10 SOL","buy:0.10").text("0.25 SOL","buy:0.25").row().text("✏️ CUSTOM","buy:custom").row().text("⬅️ BACK","setup");
 const tpKb=()=>new InlineKeyboard().text("⚡ SIMPLE TP","tp:simple").text("🧠 PARTIAL EXITS","tp:partial").row().text("⬅️ BACK","setup");
 const slKb=()=>new InlineKeyboard().text("-10%","sl:-10").text("-15%","sl:-15").row().text("-20%","sl:-20").text("-25%","sl:-25").row().text("✏️ CUSTOM","sl:custom").row().text("⬅️ BACK","setup");
@@ -233,7 +251,16 @@ async function menu(ctx:Ctx){
   const u=await user(ctx.from!.id,ctx.from!.username);
   const wallet=await pool.query("SELECT public_key FROM public.trading_wallets WHERE telegram_id=$1 AND is_active=TRUE",[ctx.from!.id]);
   const active=Boolean(u.trading_active);
-  await show(ctx,terminalHeader("Terminal")+"\\n\\n"+terminalSection("SYSTEM")+"\\n┣ Engine      🔴 Unavailable\\n┣ Mode        "+(u.mode==="manual"?"Manual":"Autopilot")+"\\n┗ Wallet      "+(wallet.rowCount?"🟢 Active":"⚪ Not set")+"\\n┣ Trading     "+(active?"🟡 ARMED":"⚪ Stopped")+"\\n\\n"+terminalSection("ACCOUNT")+"\\n┣ Positions   ⚪ Not connected\\n┗ PnL         ⚪ Not connected\\n\\n⚠️ Live execution remains blocked until scanner, safety and execution services are verified.",{parse_mode:"Markdown",reply_markup:mainKb(active,u.mode||"autopilot")});
+  const text =
+    "🚀 LA-PRINT Trade 🤖\\n\\n"+
+    "🔴 ENGINE: Unavailable\\n"+
+    "🟢 WALLET: "+(wallet.rowCount?"Active":"Not Set")+"\\n"+
+    "⚪ MODE: "+(u.mode==="manual"?"Manual":"Autopilot")+"\\n"+
+    (active?"🟢":"⚪")+" TRADING: "+(active?"Running":"Stopped")+"\\n\\n"+
+    "⚪ POSITIONS: Not Connected\\n"+
+    "⚪ PNL: Not Connected\\n\\n"+
+    "⚠️ Execution blocked until services verified.";
+  await show(ctx,text,{reply_markup:mainKb(active,u.mode||"autopilot")});
 }
 bot.command("start", async ctx => { await ctx.deleteMessage().catch(()=>{}); return menu(ctx); });
 bot.command("menu", async ctx => menu(ctx));
@@ -358,6 +385,13 @@ bot.callbackQuery("trade:start",async ctx=>{
 bot.callbackQuery("trade:stop:confirm",async ctx=>{await ctx.answerCallbackQuery();await patch(ctx.from.id,{trading_active:false});await recordAdminEvent(pool,"trading_stopped",{telegram_id:ctx.from.id},"ACTION");await notifyAdmin(bot,"trading_stopped",{telegram_id:ctx.from.id});await show(ctx,"⏹️ *TRADING STOPPED*\n\nNo new entries will be opened.",{parse_mode:"Markdown",reply_markup:mainKb(false,"autopilot")});});
 bot.callbackQuery("positions",async ctx=>{await ctx.answerCallbackQuery();await show(ctx,"📊 *POSITIONS*\n\nNo live position adapter is connected. No fake positions are shown.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔄 REFRESH","positions").text("🏠 MAIN MENU","menu")});});
 bot.callbackQuery("activity",async ctx=>{await ctx.answerCallbackQuery();await show(ctx,"📡 *ACTIVITY*\n\nNo live execution events are connected yet.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔄 REFRESH","activity").text("🏠 MAIN MENU","menu")});});
+
+bot.callbackQuery("quickbuy",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,"⚡ QUICK BUY\\n\\nChoose a preset trade size.",{reply_markup:buyKb()});});
+bot.callbackQuery("strategy",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,"🎯 STRATEGY\\n\\nChoose your trading profile.",{reply_markup:new InlineKeyboard().text("🛡 Shield","strategy:shield").text("⚖️ Balanced","strategy:balanced").row().text("⚡ Momentum","strategy:momentum").text("🔥 Degen","strategy:degen").row().text("🏠 MAIN MENU","menu")});});
+bot.callbackQuery("discover",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,"🔎 DISCOVER\\n\\nMarket discovery is not connected yet. No fake markets are shown.",{reply_markup:new InlineKeyboard().text("🔄 REFRESH","discover").row().text("🏠 MAIN MENU","menu")});});
+bot.callbackQuery("performance",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,"📈 PERFORMANCE\\n\\nLive PnL and execution performance are not connected yet. No fabricated figures are shown.",{reply_markup:new InlineKeyboard().text("🔄 REFRESH","performance").row().text("🏠 MAIN MENU","menu")});});
+bot.callbackQuery("referrals",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,"💰 REFERRALS\\n\\nYour LaPrint referral tools will appear here once the referral system is connected.",{reply_markup:new InlineKeyboard().text("🏠 MAIN MENU","menu")});});
+bot.callbackQuery("about",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,"ℹ️ LA-PRINT TRADE 🤖\\n\\nTelegram-native trading automation.\\n\\nLive execution stays blocked until the required services are verified.",{reply_markup:new InlineKeyboard().text("🏠 MAIN MENU","menu")});});
 
 bot.on("message:text",async ctx=>{
   if(!ctx.session.input)return;
