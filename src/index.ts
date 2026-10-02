@@ -7,6 +7,7 @@ import bs58 from "bs58";
 import { registerStrategySettings } from "./settings-v2";
 import { notifyAdmin } from "./admin-notifications";
 import { registerAdminConsole, ensureAdminAuditTable, recordAdminEvent } from "./admin-console";
+import { registerMultiWallets, ensureMultiWalletSchema } from "./multi-wallets";
 
 const { Pool } = pg;
 const token = process.env.BOT_TOKEN ?? process.env.TELEGRAM_BOT_TOKEN;
@@ -96,6 +97,7 @@ async function init() {
     throw new Error("Database migration verification failed: " + JSON.stringify(state));
   }
   console.log("[db] schema ready", JSON.stringify(state));
+  await ensureMultiWalletSchema(pool);
 }
 
 async function databaseSmokeTest() {
@@ -216,7 +218,7 @@ async function once(id:number,key:string) {
 const back = (target="setup") => new InlineKeyboard().text("⬅️ BACK",target).text("🏠 MAIN MENU","menu");
 const modeKb = () => new InlineKeyboard().text("🎯 AUTOPILOT","mode:auto").text("✋ MANUAL","mode:manual");
 const setupKb = () => new InlineKeyboard().text("💰 BUY AMOUNT","setup:buy").text("🎯 TAKE PROFIT","setup:tp").row().text("🛑 STOP LOSS","setup:sl").text("🔎 FILTERS","setup:filters").row().text("🔔 ALERTS","setup:alerts").text("💰 WALLET","wallet:setup").row().text("👀 REVIEW","review").row().text("⬅️ BACK","mode:back").text("🏠 MAIN MENU","menu");
-const mainKb = (active:boolean,mode:string) => { const k=new InlineKeyboard().text(mode==="manual"?"▶️ START FEED":"🚀 START","trade:start").text("📊 POSITIONS","positions").row().text("📡 ACTIVITY","activity").text("🔔 ALERTS","alerts").row().text("⚙️ SETTINGS","settings:v2").text("💰 WALLET","wallet").row(); if(active) k.text(mode==="manual"?"⏹️ STOP FEED":"⏹️ STOP AUTOPILOT","trade:stop"); return k; };
+const mainKb = (active:boolean,mode:string) => { const k=new InlineKeyboard().text(mode==="manual"?"▶️ START FEED":"🚀 START","trade:start").text("📊 POSITIONS","positions").row().text("📡 ACTIVITY","activity").text("🔔 ALERTS","alerts").row().text("⚙️ SETTINGS","settings:v2").text("👛 WALLETS","wallets").row(); if(active) k.text(mode==="manual"?"⏹️ STOP FEED":"⏹️ STOP AUTOPILOT","trade:stop"); return k; };
 const buyKb=()=>new InlineKeyboard().text("0.01 SOL","buy:0.01").text("0.05 SOL","buy:0.05").row().text("0.10 SOL","buy:0.10").text("0.25 SOL","buy:0.25").row().text("✏️ CUSTOM","buy:custom").row().text("⬅️ BACK","setup");
 const tpKb=()=>new InlineKeyboard().text("⚡ SIMPLE TP","tp:simple").text("🧠 PARTIAL EXITS","tp:partial").row().text("⬅️ BACK","setup");
 const slKb=()=>new InlineKeyboard().text("-10%","sl:-10").text("-15%","sl:-15").row().text("-20%","sl:-20").text("-25%","sl:-25").row().text("✏️ CUSTOM","sl:custom").row().text("⬅️ BACK","setup");
@@ -395,12 +397,13 @@ bot.on("message:text",async ctx=>{
 });
 registerStrategySettings({ bot, pool, show, user, patch });
 registerAdminConsole({ bot, pool, show });
+registerMultiWallets({ bot, pool, show, recordAdminEvent });
 
 bot.catch(e=>console.error("BOT_ERROR",e.error));
 await init();
 await ensureAdminAuditTable(pool);
 await databaseSmokeTest();
-await bot.api.setMyCommands([{command:"start",description:"Open LaPrint"},{command:"menu",description:"Main menu"},{command:"setup",description:"Trading setup"},{command:"mode",description:"Switch mode"}]);
+await bot.api.setMyCommands([{command:"start",description:"Open LaPrint"},{command:"menu",description:"Main menu"},{command:"setup",description:"Trading setup"},{command:"mode",description:"Switch mode"},{command:"wallets",description:"Manage trading wallets"}]);
 console.log("LaPrint V2 starting. ENGINE_MODE="+(process.env.ENGINE_MODE||"disabled"));
 const pollingClient = await acquireTelegramPollingLock();
 let shuttingDown = false;
