@@ -35,6 +35,16 @@ export async function ensureEngineSchema(pool:Pool) {
       status TEXT NOT NULL DEFAULT 'discovered', reject_reason TEXT, first_seen TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       last_seen TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS public.engine_candidate_users (
+      telegram_id BIGINT NOT NULL, address TEXT NOT NULL REFERENCES public.engine_candidates(address) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'rejected', reject_reason TEXT, strategy_profile TEXT,
+      evaluated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (telegram_id,address)
+    );
+    CREATE INDEX IF NOT EXISTS engine_candidate_users_user_status_idx
+      ON public.engine_candidate_users(telegram_id,status,evaluated_at DESC);
+    CREATE INDEX IF NOT EXISTS engine_candidate_users_address_idx
+      ON public.engine_candidate_users(address,evaluated_at DESC);
     CREATE TABLE IF NOT EXISTS public.engine_events (
       id BIGSERIAL PRIMARY KEY, telegram_id BIGINT, event_type TEXT NOT NULL, token_address TEXT,
       details JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -126,26 +136,32 @@ async function saveEvent(pool:Pool,id:number|null,type:string,address:string|nul
 
 async function scanOnce(pool:Pool) {
   const listings=await discoverBirdeye();
-  let inspected=0,qualified=0;
+  const users=await pool.query("SELECT telegram_id,strategy_profile,strategy_config,buy_amount,sl_percent,tp_config FROM public.users");
+  let inspected=0,qualified=0,evaluated=0;
   for(const item of listings.slice(0,50)){
     const address=String(pick(item,"address","token_address","mint")||"");
     if(!address) continue;
     try{
       const ov=await overview(address),c=mapCandidate(item,ov);
       if(!c.address)continue;
-      const users=await pool.query("SELECT telegram_id,strategy_profile,strategy_config,buy_amount,sl_percent,tp_config,trading_active,mode FROM public.users WHERE trading_active=TRUE");
       let anyQualified=false,reasons:string[]=[];
       for(const u of users.rows){
         const strategy=await getStrategy(u),result=evaluateCandidate(c,strategy);
-        if(result.qualified)anyQualified=true; else reasons=result.reasons;
+        await pool.query(
+          "INSERT INTO public.engine_candidate_users(telegram_id,address,status,reject_reason,strategy_profile,evaluated_at) VALUES($1,$2,$3,$4,$5,NOW()) ON CONFLICT(telegram_id,address) DO UPDATE SET status=EXCLUDED.status,reject_reason=EXCLUDED.reject_reason,strategy_profile=EXCLUDED.strategy_profile,evaluated_at=NOW()",
+          [u.telegram_id,c.address,result.qualified?"qualified":"rejected",result.qualified?null:result.reasons.join(", "),strategy.profile||u.strategy_profile||"balanced"]
+        );
+        evaluated++;
+        if(result.qualified) anyQualified=true; else if(!reasons.length) reasons=result.reasons;
       }
-      await pool.query(`INSERT INTO public.engine_candidates(address,symbol,name,market_data,status,reject_reason,last_seen)
-        VALUES($1,$2,$3,$4,$5,$6,NOW()) ON CONFLICT(address) DO UPDATE SET symbol=EXCLUDED.symbol,name=EXCLUDED.name,market_data=EXCLUDED.market_data,status=EXCLUDED.status,reject_reason=EXCLUDED.reject_reason,last_seen=NOW()`,
-        [c.address,c.symbol,c.name,c.source,anyQualified?"qualified":"rejected",anyQualified?null:reasons.join(", ")||"no active strategy"]);
+      await pool.query(
+        "INSERT INTO public.engine_candidates(address,symbol,name,market_data,status,reject_reason,last_seen) VALUES($1,$2,$3,$4,$5,$6,NOW()) ON CONFLICT(address) DO UPDATE SET symbol=EXCLUDED.symbol,name=EXCLUDED.name,market_data=EXCLUDED.market_data,status=EXCLUDED.status,reject_reason=EXCLUDED.reject_reason,last_seen=NOW()",
+        [c.address,c.symbol,c.name,c.source,anyQualified?"qualified":"rejected",anyQualified?null:reasons.join(", ")||"no user strategy"]
+      );
       inspected++;if(anyQualified)qualified++;
-    }catch(e){console.warn("[engine] token inspect failed",address,String(e).slice(0,180));}
+    }catch(e){console.warn("[scanner] token inspect failed",address,String(e).slice(0,180));}
   }
-  console.log("[engine] scan complete",JSON.stringify({discovered:listings.length,inspected,qualified}));
+  console.log("[scanner] scan complete",JSON.stringify({discovered:listings.length,inspected,qualified,evaluated}));
 }
 
 async function monitorPositions(pool:Pool) {
@@ -156,20 +172,47 @@ async function monitorPositions(pool:Pool) {
 }
 
 export function startEngine(pool:Pool,bot:BotLike) {
+  void bot;
   let scanning=false;
-  const enabled=process.env.ENGINE_MODE==="enabled";
+  const scannerEnabled=process.env.SCANNER_MODE==="enabled";
+  const engineEnabled=process.env.ENGINE_MODE==="enabled";
+  const enabled=scannerEnabled || engineEnabled;
   const tick=async()=>{
     if(scanning)return;scanning=true;
-    try{await scanOnce(pool);await monitorPositions(pool);}
-    catch(e){console.error("[engine] cycle failed",e);}
+    try{await scanOnce(pool);if(engineEnabled)await monitorPositions(pool);}
+    catch(e){console.error("[scanner] cycle failed",e);}
     finally{scanning=false;}
   };
-  if(!enabled){console.log("[engine] disabled; scanner and execution remain locked");return ()=>{};}
-  if(!process.env.BIRDEYE_API_KEY){console.error("[engine] ENGINE_MODE enabled but BIRDEYE_API_KEY missing; engine remains idle");return ()=>{};}
-  console.log("[engine] scanner worker enabled; execution is locked pending Jupiter + token account verification");
+  if(!enabled){console.log("[scanner] disabled; set SCANNER_MODE=enabled to run discovery");return ()=>{};}
+  if(!process.env.BIRDEYE_API_KEY){console.error("[scanner] enabled but BIRDEYE_API_KEY missing; scanner remains idle");return ()=>{};}
+  console.log("[scanner] discovery worker enabled; live execution remains independently gated");
   void tick();
-  const timer=setInterval(()=>void tick(),Math.max(15000,Number(process.env.ENGINE_SCAN_INTERVAL_MS)||30000));
+  const timer=setInterval(()=>void tick(),Math.max(15000,Number(process.env.SCANNER_SCAN_INTERVAL_MS||process.env.ENGINE_SCAN_INTERVAL_MS)||30000));
   return ()=>clearInterval(timer);
+}
+
+export async function getScannerView(pool:Pool,telegramId:number,status:"all"|"qualified"|"rejected"="all",offset=0) {
+  const condition=status==="all"?"":" AND ecu.status=$2";
+  const limitParam=status==="all"?"$2":"$3";
+  const offsetParam=status==="all"?"$3":"$4";
+  const params=status==="all"?[telegramId,5,Math.max(0,offset)]:[telegramId,status,5,Math.max(0,offset)];
+  const list=await pool.query(
+    "SELECT ecu.address,ecu.status,ecu.reject_reason,ecu.strategy_profile,ecu.evaluated_at,ec.symbol,ec.name,ec.market_data FROM public.engine_candidate_users ecu JOIN public.engine_candidates ec ON ec.address=ecu.address WHERE ecu.telegram_id=$1"+condition+" ORDER BY ecu.evaluated_at DESC LIMIT "+limitParam+" OFFSET "+offsetParam,
+    params
+  );
+  const counts=await pool.query(
+    "SELECT COUNT(*)::int AS total,COUNT(*) FILTER(WHERE status='qualified')::int AS qualified,COUNT(*) FILTER(WHERE status='rejected')::int AS rejected FROM public.engine_candidate_users WHERE telegram_id=$1",
+    [telegramId]
+  );
+  return {counts:counts.rows[0]||{total:0,qualified:0,rejected:0},items:list.rows};
+}
+
+export async function getScannerToken(pool:Pool,telegramId:number,address:string) {
+  const r=await pool.query(
+    "SELECT ecu.status,ecu.reject_reason,ecu.strategy_profile,ecu.evaluated_at,ec.symbol,ec.name,ec.market_data FROM public.engine_candidate_users ecu JOIN public.engine_candidates ec ON ec.address=ecu.address WHERE ecu.telegram_id=$1 AND ecu.address=$2 LIMIT 1",
+    [telegramId,address]
+  );
+  return r.rows[0]||null;
 }
 
 export async function getEngineSnapshot(pool:Pool,telegramId:number) {
