@@ -252,13 +252,13 @@ async function menu(ctx:Ctx){
   const wallet=await pool.query("SELECT public_key FROM public.trading_wallets WHERE telegram_id=$1 AND is_active=TRUE",[ctx.from!.id]);
   const active=Boolean(u.trading_active);
   const text =
-    "🚀 LA-PRINT Trade 🤖\\n\\n"+
-    "🔴 ENGINE: Unavailable\\n"+
-    "🟢 WALLET: "+(wallet.rowCount?"Active":"Not Set")+"\\n"+
-    "⚪ MODE: "+(u.mode==="manual"?"Manual":"Autopilot")+"\\n"+
-    (active?"🟢":"⚪")+" TRADING: "+(active?"Running":"Stopped")+"\\n\\n"+
-    "⚪ POSITIONS: Not Connected\\n"+
-    "⚪ PNL: Not Connected\\n\\n"+
+    "🚀 LA-PRINT Trade 🤖\n\n"+
+    "🔴 ENGINE: Unavailable\n\n"+
+    "🟢 WALLET: "+(wallet.rowCount?"Active":"Not Set")+"\n\n"+
+    "⚪ MODE: "+(u.mode==="manual"?"Manual":"Autopilot")+"\n\n"+
+    (active?"🟢":"⚪")+" TRADING: "+(active?"Running":"Stopped")+"\n\n"+
+    "⚪ POSITIONS: Not Connected\n\n"+
+    "⚪ PNL: Not Connected\n\n"+
     "⚠️ Execution blocked until services verified.";
   await show(ctx,text,{reply_markup:mainKb(active,u.mode||"autopilot")});
 }
