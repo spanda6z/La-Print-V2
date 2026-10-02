@@ -1,4 +1,4 @@
-import { CandidateMetrics, QualificationResult, getSavedStrategyConfig, evaluateCandidate } from "./settings-v2";
+import { CandidateMetrics, QualificationResult, getSavedStrategyConfig, evaluateCandidate } from "./settings-v2.js";
 
 export async function qualifyTokenForUser(pool: any, telegramId: number, token: CandidateMetrics): Promise<QualificationResult> {
   const config = await getSavedStrategyConfig(pool, telegramId);
