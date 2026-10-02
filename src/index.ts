@@ -4,9 +4,8 @@ import pg from "pg";
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 import bs58 from "bs58";
-import { registerStrategySettings } from "./settings-v2.js";
 import { notifyAdmin } from "./admin-notifications.js";
-import { registerAdminConsole, ensureAdminAuditTable, recordAdminEvent } from "./admin-console.js";
+import { registerAdminConsole, recordAdminEvent } from "./admin-console.js";
 import { registerMultiWallets, ensureMultiWalletSchema } from "./multi-wallets.js";
 import { ensureEngineSchema, startEngine, getScannerView, getScannerToken } from "./engine.js";
 
@@ -227,19 +226,12 @@ const mainKb = (active:boolean,mode:string) => {
   const k = new InlineKeyboard()
     .text(terminalAction(active ? (mode==="manual"?"Stop feed":"Stop autopilot") : "Start trading", active ? "danger" : "success"), active ? "trade:stop" : "trade:start")
     .row()
-    .text("📊 Positions","positions").text("⚡ Quick Buy","quickbuy")
+    .text("📊 Positions","positions").text("📡 Activity","activity")
     .row()
-    .text("🎯 Strategy","strategy")
+    .text("👛 Wallets","wallets").text("🔎 Discover","discover")
     .row()
-    .text("👛 Wallets","wallets").text("📡 Activity","activity")
-    .row()
-    .text("🔎 Discover","discover")
-    .row()
-    .text("🔔 Alerts","alerts").text("📈 Performance","performance")
-    .row()
-    .text("⚙️ Settings","settings:v2")
-    .row()
-    .text("💰 Referrals","referrals").text("ℹ️ About","about");
+    .text("🔔 Alerts","alerts").text("⚙️ Settings","setup")
+    .row();
   return k;
 };
 const buyKb=()=>new InlineKeyboard().text("0.01 SOL","buy:0.01").text("0.05 SOL","buy:0.05").row().text("0.10 SOL","buy:0.10").text("0.25 SOL","buy:0.25").row().text("✏️ CUSTOM","buy:custom").row().text("⬅️ BACK","setup");
@@ -375,21 +367,19 @@ bot.callbackQuery("trade:start",async ctx=>{
   if(!wallet.rowCount)missing.push("Active Wallet");
   if(missing.length){
     await patch(ctx.from.id,{trading_active:false});
-    return show(ctx,"⚠️ *START REQUEST RECEIVED*\\n\\nStatus: *SETUP REQUIRED*\\n\\n"+missing.map(x=>"❌ "+x).join("\\n")+"\\n\\nComplete the missing items, then press *Start* again.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("⚙️ OPEN SETUP","settings:v2").row().text("👛 WALLETS","wallets").row().text("⌂ MAIN MENU","menu")});
+    return show(ctx,"⚠️ *START REQUEST RECEIVED*\\n\\nStatus: *SETUP REQUIRED*\\n\\n"+missing.map(x=>"❌ "+x).join("\\n")+"\\n\\nComplete the missing items, then press *Start* again.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("⚙️ OPEN SETUP","setup").row().text("👛 WALLETS","wallets").row().text("⌂ MAIN MENU","menu")});
   }
   await patch(ctx.from.id,{trading_active:true});
   await recordAdminEvent(pool,"trading_started",{telegram_id:ctx.from.id,wallet_address:wallet.rows[0].public_key},"ACTION");
   if(process.env.ENGINE_MODE!=="enabled"){
     return show(ctx,"🟡 *START REQUEST RECEIVED*\\n\\nStatus: *ARMED*\\nWallet: "+wallet.rows[0].public_key+"\\nStrategy: "+(u.strategy_profile||"balanced")+"\\n\\nTelegram control is active. The live scanner/execution engine is still disabled.\\n\\n⚠️ *No trade has been opened.*\\n\\nUse *Stop* to disarm trading.",{parse_mode:"Markdown",reply_markup:mainKb(true,u.mode||"autopilot")});
   }
-  return show(ctx,"🟡 *MONITORING ARMED*\\n\\nThe discovery worker can monitor candidates against your saved strategy.\\n\\n⚠️ Swap execution and automated exits are not enabled yet. No order will be sent.\\n\\nUse *Stop* to halt monitoring.",{parse_mode:"Markdown",reply_markup:mainKb(true,u.mode||"autopilot")});
+  return show(ctx,"🟡 *MONITORING ARMED*\\n\\nThe discovery worker can monitor candidates against your saved filters.\\n\\n⚠️ Swap execution and automated exits are not enabled yet. No order will be sent.\\n\\nUse *Stop* to halt monitoring.",{parse_mode:"Markdown",reply_markup:mainKb(true,u.mode||"autopilot")});
 });bot.callbackQuery("trade:stop",async ctx=>{await ctx.answerCallbackQuery();await show(ctx,"⏹️ *STOP TRADING?*\n\nNew entries will stop. Existing positions are not automatically closed.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("⏹️ YES, STOP","trade:stop:confirm").text("↩️ KEEP RUNNING","menu")});});
 bot.callbackQuery("trade:stop:confirm",async ctx=>{await ctx.answerCallbackQuery();await patch(ctx.from.id,{trading_active:false});await recordAdminEvent(pool,"trading_stopped",{telegram_id:ctx.from.id},"ACTION");await notifyAdmin(bot,"trading_stopped",{telegram_id:ctx.from.id});await show(ctx,"⏹️ *TRADING STOPPED*\n\nNo new entries will be opened.",{parse_mode:"Markdown",reply_markup:mainKb(false,"autopilot")});});
 bot.callbackQuery("positions",async ctx=>{await ctx.answerCallbackQuery();await show(ctx,"📊 *POSITIONS*\n\nNo live position adapter is connected. No fake positions are shown.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔄 REFRESH","positions").text("🏠 MAIN MENU","menu")});});
 bot.callbackQuery("activity",async ctx=>{await ctx.answerCallbackQuery();await show(ctx,"📡 *ACTIVITY*\n\nNo live execution events are connected yet.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔄 REFRESH","activity").text("🏠 MAIN MENU","menu")});});
 
-bot.callbackQuery("quickbuy",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,"⚡ QUICK BUY\\n\\nChoose a preset trade size.",{reply_markup:buyKb()});});
-bot.callbackQuery("strategy",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,"🎯 STRATEGY\\n\\nChoose your trading profile.",{reply_markup:new InlineKeyboard().text("🛡 Shield","strategy:shield").text("⚖️ Balanced","strategy:balanced").row().text("⚡ Momentum","strategy:momentum").text("🔥 Degen","strategy:degen").row().text("🏠 MAIN MENU","menu")});});
 function scannerMarketData(row:any){
   const md=row?.market_data||{};
   const ov=md.overview||{};
@@ -433,9 +423,6 @@ bot.callbackQuery(/^scanner:token:([1-9A-HJ-NP-Za-km-z]{32,44})$/,async ctx=>{
     (row.reject_reason?"Reason: "+row.reject_reason:"Result: matches the saved discovery filters.")+"\n\nQualification is not a buy signal. Security fields are shown only when the upstream data provides them.";
   return show(ctx,text,{reply_markup:new InlineKeyboard().text("⬅️ DISCOVER","discover").text("🏠 MAIN MENU","menu")});
 });
-bot.callbackQuery("performance",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,"📈 PERFORMANCE\\n\\nLive PnL and execution performance are not connected yet. No fabricated figures are shown.",{reply_markup:new InlineKeyboard().text("🔄 REFRESH","performance").row().text("🏠 MAIN MENU","menu")});});
-bot.callbackQuery("referrals",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,"💰 REFERRALS\\n\\nYour LaPrint referral tools will appear here once the referral system is connected.",{reply_markup:new InlineKeyboard().text("🏠 MAIN MENU","menu")});});
-bot.callbackQuery("about",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,"ℹ️ LA-PRINT TRADE 🤖\\n\\nTelegram-native trading automation.\\n\\nLive execution stays blocked until the required services are verified.",{reply_markup:new InlineKeyboard().text("🏠 MAIN MENU","menu")});});
 
 bot.on("message:text",async ctx=>{
   if(!ctx.session.input)return;
@@ -476,7 +463,6 @@ bot.on("message:text",async ctx=>{
     await patch(ctx.from.id,{tp_config:{type:"simple",targets:[{pct:v,sellPct:100}]}});ctx.session.input=undefined;return show(ctx,"✅ TAKE PROFIT SAVED\n\n+"+v+"% → sell 100%",{reply_markup:setupKb()});
   }
 });
-registerStrategySettings({ bot, pool, show, user, patch });
 registerAdminConsole({ bot, pool, show });
 registerMultiWallets({ bot, pool, show, recordAdminEvent });
 
