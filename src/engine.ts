@@ -136,6 +136,12 @@ export function evaluateCandidate(c:Candidate,s:Strategy) {
   ];
   const failures:string[]=[];
   for(let i=0;i<checks.length;i+=2){if(!checks[i][1])failures.push(checks[i][0]);else if(!checks[i+1][1])failures.push(checks[i+1][0]);}
+  if(d.strictData!==false){
+    if(c.security.mintAuthority==="UNKNOWN") failures.push("mint authority unavailable");
+    else if(c.security.mintAuthority==="ACTIVE") failures.push("mint authority active");
+    if(c.security.freezeAuthority==="UNKNOWN") failures.push("freeze authority unavailable");
+    else if(c.security.freezeAuthority==="ACTIVE") failures.push("freeze authority active");
+  }
   return {qualified:failures.length===0,reasons:failures};
 }
 
