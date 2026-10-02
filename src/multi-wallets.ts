@@ -42,6 +42,8 @@ export async function ensureMultiWalletSchema(pool:any) {
     CREATE UNIQUE INDEX IF NOT EXISTS trading_wallets_one_active_uidx ON public.trading_wallets(telegram_id) WHERE is_active=TRUE;
     CREATE INDEX IF NOT EXISTS trading_wallets_user_created_idx ON public.trading_wallets(telegram_id,created_at DESC);
     ALTER TABLE public.users ADD COLUMN IF NOT EXISTS active_wallet_id BIGINT;
+    ALTER TABLE public.trade_config_snapshots ADD COLUMN IF NOT EXISTS wallet_id BIGINT;
+    ALTER TABLE public.trade_config_snapshots ADD COLUMN IF NOT EXISTS wallet_address TEXT;
   `);
   const legacy=await pool.query("SELECT w.telegram_id,w.public_key,w.encrypted_secret,w.encryption_iv,w.encryption_tag FROM public.wallets w LEFT JOIN public.trading_wallets tw ON tw.telegram_id=w.telegram_id AND tw.public_key=w.public_key WHERE tw.id IS NULL");
   for(const row of legacy.rows){
