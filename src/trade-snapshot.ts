@@ -1,5 +1,5 @@
-import { getSavedStrategyConfig, StrategyConfig } from "./settings-v2";
-import { getActiveTradingWallet } from "./multi-wallets";
+import { getSavedStrategyConfig, StrategyConfig } from "./settings-v2.js";
+import { getActiveTradingWallet } from "./multi-wallets.js";
 
 export async function snapshotStrategyForEntry(pool: any, telegramId: number): Promise<{ id: string; config: StrategyConfig }> {
   const config = await getSavedStrategyConfig(pool, telegramId);
