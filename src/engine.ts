@@ -72,12 +72,59 @@ async function apiJson(url:string, headers:Record<string,string>) {
   return body?.data ?? body;
 }
 
-async function discoverBirdeye():Promise<any[]> {
-  const key=process.env.BIRDEYE_API_KEY;
-  if(!key) throw new Error("BIRDEYE_API_KEY is not configured");
-  const base=process.env.BIRDEYE_API_BASE || "https://public-api.birdeye.so";
-  const data=await apiJson(base+"/defi/v2/tokens/new_listing?limit=20&meme_platform_enabled=true",authHeaders(key));
-  return Array.isArray(data)?data:(data?.items||data?.tokens||[]);
+const pumpQueue:any[]=[];
+const pumpSeen=new Map<string,number>();
+let pumpSocket:WebSocket|null=null;
+let pumpReconnectTimer:ReturnType<typeof setTimeout>|null=null;
+let pumpStarting=false;
+
+function pumpNativeConfigured(){
+  return Boolean(process.env.PUMPPORTAL_WS_URL || "wss://pumpportal.fun/api/data");
+}
+
+function startPumpNativeStream(){
+  if(pumpStarting || pumpSocket) return;
+  pumpStarting=true;
+  const url=process.env.PUMPPORTAL_WS_URL || "wss://pumpportal.fun/api/data";
+  try{
+    const ws=new WebSocket(url);
+    pumpSocket=ws;
+    ws.addEventListener("open",()=>{
+      pumpStarting=false;
+      ws.send(JSON.stringify({method:"subscribeNewToken"}));
+      console.log("[scanner] Pump.fun-native discovery stream connected");
+    });
+    ws.addEventListener("message",(event)=>{
+      try{
+        const raw=JSON.parse(String(event.data));
+        const address=String(pick(raw,"mint","address","token_address")||"");
+        if(!address)return;
+        const ts=Date.now();
+        if(pumpSeen.has(address) && ts-(pumpSeen.get(address)||0)<10*60_000)return;
+        pumpSeen.set(address,ts);
+        pumpQueue.push({...raw,address,__pumpNative:true});
+        while(pumpQueue.length>200)pumpQueue.shift();
+      }catch(e){console.warn("[scanner] invalid Pump.fun stream event",String(e).slice(0,120));}
+    });
+    const reconnect=()=>{
+      pumpSocket=null;
+      pumpStarting=false;
+      if(pumpReconnectTimer)return;
+      pumpReconnectTimer=setTimeout(()=>{pumpReconnectTimer=null;startPumpNativeStream();},5000);
+    };
+    ws.addEventListener("close",reconnect);
+    ws.addEventListener("error",reconnect);
+  }catch(e){
+    pumpSocket=null;
+    pumpStarting=false;
+    console.error("[scanner] Pump.fun-native stream failed",String(e).slice(0,180));
+  }
+}
+
+function takePumpCandidates(limit=20){
+  const out:any[]=[];
+  while(out.length<limit && pumpQueue.length)out.push(pumpQueue.shift());
+  return out;
 }
 
 async function mintSecurity(address:string):Promise<Security> {
@@ -162,15 +209,21 @@ async function saveEvent(pool:Pool,id:number|null,type:string,address:string|nul
 }
 
 async function scanOnce(pool:Pool) {
-  const listings=await discoverBirdeye();
+  const listings=takePumpCandidates(20);
   const users=await pool.query("SELECT telegram_id,strategy_profile,strategy_config,buy_amount,sl_percent,tp_config FROM public.users");
   let inspected=0,qualified=0,evaluated=0;
-  for(const item of listings.slice(0,20)){
+  for(const item of listings){
     const address=String(pick(item,"address","token_address","mint")||"");
     if(!address) continue;
     try{
-      const ov=await overview(address),security=await mintSecurity(address),c=mapCandidate(item,ov,security);
-      if(!c.address)continue;
+      if(!item.__pumpNative) continue;
+      const nativeMcSol=n(pick(item,"marketCapSol","market_cap_sol"));
+      const solUsd=n(pick(item,"solPriceUsd","sol_price_usd"));
+      const roughMcUsd=nativeMcSol!==null&&solUsd!==null?nativeMcSol*solUsd:null;
+      if(roughMcUsd!==null && roughMcUsd<16000) continue;
+      const ov=await overview(address),security=await mintSecurity(address),candidate=mapCandidate(item,ov,security);
+      if(!candidate.address)continue;
+      const c={...candidate,marketCap:candidate.marketCap!==null&&candidate.marketCap>=0?candidate.marketCap:null};
       for(const u of users.rows){
         const strategy=await getStrategy(u),result=evaluateCandidate(c,strategy);
         await pool.query(
@@ -187,7 +240,7 @@ async function scanOnce(pool:Pool) {
       inspected++;
     }catch(e){console.warn("[scanner] token inspect failed",address,String(e).slice(0,180));}
   }
-  console.log("[scanner] scan complete",JSON.stringify({discovered:listings.length,inspected,qualified,evaluated}));
+  console.log("[scanner] scan complete",JSON.stringify({discovered:listings.length,inspected,qualified,evaluated,source:"pump.fun-native"}));
 }
 async function monitorPositions(pool:Pool) {
   // Position monitoring deliberately does not fabricate marks or execute exits until token-account
@@ -209,8 +262,10 @@ export function startEngine(pool:Pool,bot:BotLike) {
     finally{scanning=false;}
   };
   if(!enabled){console.log("[scanner] disabled; set SCANNER_MODE=enabled to run discovery");return ()=>{};}
-  if(!process.env.BIRDEYE_API_KEY){console.error("[scanner] enabled but BIRDEYE_API_KEY missing; scanner remains idle");return ()=>{};}
-  console.log("[scanner] discovery worker enabled; live execution remains independently gated");
+  if(!pumpNativeConfigured()){console.error("[scanner] Pump.fun-native discovery is not configured; scanner remains idle");return ()=>{};}
+  if(!process.env.BIRDEYE_API_KEY){console.error("[scanner] Pump.fun discovery enabled but BIRDEYE enrichment key is missing; required enrichment will fail closed");}
+  startPumpNativeStream();
+  console.log("[scanner] Pump.fun-native discovery worker enabled; Birdeye is enrichment only; live execution remains independently gated");
   void tick();
   const timer=setInterval(()=>void tick(),Math.max(15000,Number(process.env.SCANNER_SCAN_INTERVAL_MS||process.env.ENGINE_SCAN_INTERVAL_MS)||30000));
   return ()=>clearInterval(timer);
