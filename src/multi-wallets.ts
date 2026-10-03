@@ -191,7 +191,7 @@ export function registerMultiWallets(d:Deps){
   d.bot.callbackQuery("wallets",async ctx=>{await ctx.answerCallbackQuery();return home(ctx,d);});
   d.bot.callbackQuery("mw:switch",async ctx=>{await ctx.answerCallbackQuery();return walletList(ctx,d);});
   d.bot.callbackQuery("wallets:refresh",async ctx=>{await ctx.answerCallbackQuery("Refreshing balance…");return home(ctx,d);});
-  d.bot.callbackQuery(/^mw:backup(?::(\\d+))?$/,async ctx=>{
+  d.bot.callbackQuery(/^mw:backup(?::(\d+))?$/,async ctx=>{
     await ctx.answerCallbackQuery();
     const id=ctx.match?.[1];
     const extra=id?"\n\nThis wallet is stored encrypted. The private key is not displayed or sent through Telegram.":"\n\nYour wallet secrets remain encrypted. La-Print does not display private keys from this screen.";
