@@ -10,7 +10,7 @@ type Deps = {
 };
 
 export type StrategyConfig = {
-  profile: "shield" | "balanced" | "momentum" | "degen";
+  profile: "conservative" | "balanced" | "aggressive" | "degen";
   customized: boolean;
   version: number;
   discovery: {
@@ -19,6 +19,7 @@ export type StrategyConfig = {
     liquidityMin: number;
     volume5mMin: number;
     tokenAgeMinSec: number;
+    tokenAgeMaxSec: number | null;
     holderMin: number;
     top10Max: number;
     devMax: number;
@@ -28,76 +29,35 @@ export type StrategyConfig = {
   };
   execution: {
     buyAmountSol: number;
+    maxBuyAmountSol: number;
+    maxOpenPositions: number;
     takeProfit: { pct: number; sellPct: number }[];
     stopLossPct: number;
     trailing: { enabled: boolean; activationPct: number; pullbackPct: number };
+    dailySpendingLimitSol: number | null;
   };
 };
 
 const PRESETS: Record<string, Omit<StrategyConfig, "version">> = {
-  shield: {
-    profile: "shield",
-    customized: false,
-    discovery: {
-      marketCapMin: 30000, marketCapMax: 100000,
-      liquidityMin: 10000, volume5mMin: 5000, tokenAgeMinSec: 300,
-      holderMin: 250, top10Max: 20, devMax: 2,
-      marketTypes: ["new_launch", "pre_bond"], smartFilters: true, strictData: true
-    },
-    execution: {
-      buyAmountSol: 0.10,
-      takeProfit: [{pct:30,sellPct:50},{pct:60,sellPct:30},{pct:100,sellPct:20}],
-      stopLossPct: -15,
-      trailing: {enabled:true,activationPct:20,pullbackPct:10}
-    }
+  conservative: {
+    profile: "conservative", customized: false,
+    discovery: { marketCapMin:16000, marketCapMax:null, liquidityMin:5000, volume5mMin:2000, tokenAgeMinSec:30, tokenAgeMaxSec:1800, holderMin:50, top10Max:35, devMax:5, marketTypes:["new_launch","pre_bond"], smartFilters:true, strictData:true },
+    execution: { buyAmountSol:0.05, maxBuyAmountSol:0.05, maxOpenPositions:2, takeProfit:[{pct:20,sellPct:50},{pct:40,sellPct:25},{pct:60,sellPct:15}], stopLossPct:-10, trailing:{enabled:true,activationPct:20,pullbackPct:10}, dailySpendingLimitSol:null }
   },
   balanced: {
-    profile: "balanced",
-    customized: false,
-    discovery: {
-      marketCapMin: 16000, marketCapMax: null,
-      liquidityMin: 5000, volume5mMin: 2000, tokenAgeMinSec: 60,
-      holderMin: 100, top10Max: 30, devMax: 5,
-      marketTypes: ["new_launch", "pre_bond"], smartFilters: true, strictData: true
-    },
-    execution: {
-      buyAmountSol: 0.25,
-      takeProfit: [{pct:40,sellPct:50},{pct:100,sellPct:25},{pct:200,sellPct:15}],
-      stopLossPct: -20,
-      trailing: {enabled:true,activationPct:30,pullbackPct:15}
-    }
+    profile: "balanced", customized: false,
+    discovery: { marketCapMin:16000, marketCapMax:null, liquidityMin:5000, volume5mMin:2000, tokenAgeMinSec:30, tokenAgeMaxSec:1800, holderMin:50, top10Max:35, devMax:5, marketTypes:["new_launch","pre_bond"], smartFilters:true, strictData:true },
+    execution: { buyAmountSol:0.10, maxBuyAmountSol:0.10, maxOpenPositions:3, takeProfit:[{pct:40,sellPct:50},{pct:100,sellPct:25},{pct:200,sellPct:15}], stopLossPct:-15, trailing:{enabled:true,activationPct:30,pullbackPct:12}, dailySpendingLimitSol:null }
   },
-  momentum: {
-    profile: "momentum",
-    customized: false,
-    discovery: {
-      marketCapMin: 16000, marketCapMax: null,
-      liquidityMin: 5000, volume5mMin: 5000, tokenAgeMinSec: 60,
-      holderMin: 100, top10Max: 30, devMax: 5,
-      marketTypes: ["new_launch", "pre_bond"], smartFilters: true, strictData: false
-    },
-    execution: {
-      buyAmountSol: 0.50,
-      takeProfit: [{pct:40,sellPct:50},{pct:100,sellPct:25},{pct:200,sellPct:15}],
-      stopLossPct: -20,
-      trailing: {enabled:true,activationPct:30,pullbackPct:15}
-    }
+  aggressive: {
+    profile: "aggressive", customized: false,
+    discovery: { marketCapMin:16000, marketCapMax:null, liquidityMin:5000, volume5mMin:2000, tokenAgeMinSec:30, tokenAgeMaxSec:1800, holderMin:50, top10Max:35, devMax:5, marketTypes:["new_launch","pre_bond"], smartFilters:true, strictData:true },
+    execution: { buyAmountSol:0.25, maxBuyAmountSol:0.25, maxOpenPositions:5, takeProfit:[{pct:50,sellPct:50},{pct:100,sellPct:25},{pct:200,sellPct:15}], stopLossPct:-20, trailing:{enabled:true,activationPct:30,pullbackPct:15}, dailySpendingLimitSol:null }
   },
   degen: {
-    profile: "degen",
-    customized: false,
-    discovery: {
-      marketCapMin: 16000, marketCapMax: null,
-      liquidityMin: 3000, volume5mMin: 1000, tokenAgeMinSec: 30,
-      holderMin: 50, top10Max: 35, devMax: 10,
-      marketTypes: ["new_launch", "pre_bond"], smartFilters: true, strictData: false
-    },
-    execution: {
-      buyAmountSol: 1.00,
-      takeProfit: [{pct:50,sellPct:50},{pct:150,sellPct:25},{pct:300,sellPct:25}],
-      stopLossPct: -25,
-      trailing: {enabled:true,activationPct:40,pullbackPct:20}
-    }
+    profile: "degen", customized: false,
+    discovery: { marketCapMin:16000, marketCapMax:null, liquidityMin:3000, volume5mMin:1000, tokenAgeMinSec:30, tokenAgeMaxSec:1800, holderMin:50, top10Max:35, devMax:10, marketTypes:["new_launch","pre_bond"], smartFilters:true, strictData:true },
+    execution: { buyAmountSol:0.50, maxBuyAmountSol:0.50, maxOpenPositions:8, takeProfit:[{pct:100,sellPct:50},{pct:200,sellPct:25},{pct:300,sellPct:15}], stopLossPct:-25, trailing:{enabled:true,activationPct:40,pullbackPct:20}, dailySpendingLimitSol:null }
   }
 };
 
@@ -121,14 +81,14 @@ function fmtUsd(n: number | null) {
 }
 
 function strategyName(p: string) {
-  return ({shield:"🛡️ Shield",balanced:"⚖️ Balanced",momentum:"🔥 Momentum",degen:"☠️ Degen"} as any)[p] || p;
+  return ({conservative:"🛡️ Conservative",balanced:"⚖️ Balanced",aggressive:"🔥 Aggressive",degen:"☠️ Degen"} as any)[p] || p;
 }
 
 function profileKeyboard(current: string) {
   return new InlineKeyboard()
-    .text(current === "shield" ? "🛡️ SHIELD ✓" : "🛡️ SHIELD", "v2:profile:shield")
+    .text(current === "conservative" ? "🛡️ SHIELD ✓" : "🛡️ SHIELD", "v2:profile:conservative")
     .text(current === "balanced" ? "⚖️ BALANCED ✓" : "⚖️ BALANCED", "v2:profile:balanced").row()
-    .text(current === "momentum" ? "🔥 MOMENTUM ✓" : "🔥 MOMENTUM", "v2:profile:momentum")
+    .text(current === "aggressive" ? "🔥 MOMENTUM ✓" : "🔥 MOMENTUM", "v2:profile:aggressive")
     .text(current === "degen" ? "☠️ DEGEN ✓" : "☠️ DEGEN", "v2:profile:degen").row()
     .text("⬅️ SETTINGS", "v2:settings");
 }
@@ -309,7 +269,7 @@ export function registerStrategySettings(deps: Deps) {
     await deps.show(ctx, text, {parse_mode:"Markdown",reply_markup:profileKeyboard(c.profile)});
   });
 
-  bot.callbackQuery(/^v2:profile:(shield|balanced|momentum|degen)$/, async (ctx: any) => {
+  bot.callbackQuery(/^v2:profile:(conservative|balanced|aggressive|degen)$/, async (ctx: any) => {
     await ctx.answerCallbackQuery();
     const profile = ctx.match[1];
     const current = await load(deps, ctx.from.id);
@@ -348,7 +308,7 @@ export function registerStrategySettings(deps: Deps) {
   bot.callbackQuery(/^v2:mc:(16000|20000|30000|50000|100000|unlimited)$/, async (ctx: any) => {
     await ctx.answerCallbackQuery();
     const c = await load(deps, ctx.from.id);
-    const min = ctx.match[1] === "unlimited" ? c.discovery.marketCapMin : Number(ctx.match[1]);
+    const min = ctx.match[1] === "unlimited" ? Math.max(16000,c.discovery.marketCapMin) : Math.max(16000,Number(ctx.match[1]));
     c.discovery.marketCapMin = min;
     c.discovery.marketCapMax = null;
     const saved = await save(deps, ctx.from.id, c, true);
