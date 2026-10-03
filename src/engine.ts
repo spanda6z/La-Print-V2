@@ -8,7 +8,7 @@ type Strategy = {
   profile?: string;
   discovery?: {
     marketCapMin?: number; marketCapMax?: number | null; liquidityMin?: number;
-    volume5mMin?: number; tokenAgeMinSec?: number; holderMin?: number;
+    volume5mMin?: number; tokenAgeMinSec?: number; tokenAgeMaxSec?: number | null; holderMin?: number;
     top10Max?: number; devMax?: number; smartFilters?: boolean; strictData?: boolean;
   };
   execution?: {
