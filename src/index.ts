@@ -353,7 +353,7 @@ bot.callbackQuery("onboarding:terms",async ctx=>{await ctx.answerCallbackQuery()
 bot.callbackQuery("terms:full",async ctx=>{await ctx.answerCallbackQuery();return termsFull(ctx);});
 bot.callbackQuery("terms:accept",async ctx=>{await ctx.answerCallbackQuery("Terms accepted");await patch(ctx.from!.id,{terms_accepted:true});return walletOnboardingScreen(ctx);});
 bot.callbackQuery("terms:decline",async ctx=>{await ctx.answerCallbackQuery("Terms declined");return show(ctx,"❌ Terms declined\n\nYou must accept the bot terms before using LAPrINT trading features.",{reply_markup:new InlineKeyboard().text("📜 VIEW TERMS","onboarding:terms")});});
-bot.callbackQuery("onboarding:dashboard",async ctx=>{await ctx.answerCallbackQuery("Dashboard");return menu(ctx);});
+bot.callbackQuery("onboarding:dashboard",async ctx=>{await ctx.answerCallbackQuery("Trading configuration");return setupScreen(ctx);});
 bot.command("menu", async ctx => menu(ctx));
 bot.callbackQuery("menu", async ctx => { await ctx.answerCallbackQuery("Main menu"); return menu(ctx); });
 
