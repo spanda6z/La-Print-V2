@@ -191,7 +191,19 @@ export function registerMultiWallets(d:Deps){
   d.bot.callbackQuery("wallets",async ctx=>{await ctx.answerCallbackQuery();return home(ctx,d);});
   d.bot.callbackQuery("mw:switch",async ctx=>{await ctx.answerCallbackQuery();return walletList(ctx,d);});
   d.bot.callbackQuery("wallets:refresh",async ctx=>{await ctx.answerCallbackQuery("Refreshing balance…");return home(ctx,d);});
-  d.bot.callbackQuery(/^mw:backup(?::(\\d+))?$/,async ctx=>{\n    await ctx.answerCallbackQuery();\n    const id=ctx.match?.[1];\n    const back=id?"mw:view:"+id:"wallets";\n    return d.show(ctx,"🔐 *Backup Wallet*\\n\\nYour wallet is encrypted in La-Print. You can reveal the private key here to make an offline backup.\\n\\n⚠️ Never share the private key. Anyone with it can control the wallet. Save it securely, then remove this message.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔑 SHOW PRIVATE KEY","mw:backup:show"+(id?":"+id:"")).row().text("⬅️ BACK",back)});\n  });\n  d.bot.callbackQuery(/^mw:backup:show(?::(\\d+))?$/,async ctx=>{\n    await ctx.answerCallbackQuery("Preparing backup…");\n    const id=ctx.match?.[1];\n    try{\n      const w=id?await getTradingWalletById(d.pool,ctx.from.id,id):await getActiveTradingWallet(d.pool,ctx.from.id);\n      if(!w)return d.show(ctx,"⚠️ Wallet not found.",{reply_markup:new InlineKeyboard().text("👛 WALLETS","wallets")});\n      const privateKey=bs58.encode(w.keypair.secretKey);\n      return d.show(ctx,"🔑 *PRIVATE KEY BACKUP*\\n\\nWallet: "+w.name+"\\nAddress:\\n"+w.publicKey+"\\n\\nPrivate key:\\n"+privateKey+"\\n\\n⚠️ Keep this private. Do not share it with anyone or paste it into public chats. Delete this Telegram message after saving your backup.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔐 BACK TO BACKUP","mw:backup"+(id?":"+id:"")).row().text("👛 WALLETS","wallets")});\n    }catch(e){\n      console.error("[wallets] backup",e);\n      return d.show(ctx,"❌ Backup failed.\\n\\nThe wallet was not changed.",{reply_markup:new InlineKeyboard().text("🔐 TRY AGAIN","mw:backup"+(id?":"+id:"")).row().text("👛 WALLETS","wallets")});\n    }\n  });\n  d.bot.callbackQuery("mw:create",async ctx=>{
+  d.bot.callbackQuery(/^mw:key:(\\d+)$/,async ctx=>{
+    await ctx.answerCallbackQuery("Preparing private key…");
+    try{
+      const w=await getTradingWalletById(d.pool,ctx.from.id,ctx.match[1]);
+      if(!w)return d.show(ctx,"⚠️ Wallet not found.",{reply_markup:new InlineKeyboard().text("👛 WALLETS","wallets")});
+      const privateKey=bs58.encode(w.keypair.secretKey);
+      return d.show(ctx,"🔑 PRIVATE KEY\\n\\nWallet: "+w.name+"\\nAddress:\\n"+w.publicKey+"\\n\\nPrivate key:\\n"+privateKey+"\\n\\n⚠️ This key controls the wallet. Keep it private and store it securely.",{reply_markup:new InlineKeyboard().text("👛 WALLETS","wallets").row().text("‹ BACK","mw:view:"+w.id)});
+    }catch(e){
+      console.error("[wallets] key",e);
+      return d.show(ctx,"❌ Unable to retrieve the private key.",{reply_markup:new InlineKeyboard().text("‹ BACK","mw:view:"+ctx.match[1])});
+    }
+  });
+  d.bot.callbackQuery("mw:create",async ctx=>{
     await ctx.answerCallbackQuery("Creating wallet…");
     try{
       const onboarding=(ctx.session as any).onboardingWallet===true;
