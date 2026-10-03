@@ -215,11 +215,9 @@ export function registerMultiWallets(d:Deps){
       }
       if(onboarding){
         (ctx.session as any).onboardingWallet=false;
-        return d.show(ctx,"✅ Wallet created successfully.\\n\\nAddress:\\n"+w.public_key+"\\n\\nPrivate key:\\n"+w.private_key+"\\n\\n⚠️ Save the private key somewhere secure. Anyone who has it can control this wallet. Never share it with anyone.\\n\\nYour wallet is now ready for LAPrINT.",{
-          reply_markup:new InlineKeyboard().text("⚙️ CONFIGURE TRADING","setup").row().text("⬅️ BACK","wallets")
-        });
+        return d.show(ctx,w.public_key+"\\n"+w.private_key);
       }
-      return d.show(ctx,"✅ Wallet created successfully.\\n\\nAddress:\\n"+w.public_key+"\\n\\nPrivate key:\\n"+w.private_key+"\\n\\n⚠️ Save the private key somewhere secure. Anyone who has it can control this wallet. Never share it with anyone.\\n\\nDeposit SOL before trading.",{reply_markup:new InlineKeyboard().text("💰 DEPOSIT SOL","mw:deposit:"+w.id).row().text("📋 COPY ADDRESS","mw:copy:"+w.id).text("👛 WALLETS","wallets")});
+      return d.show(ctx,w.public_key+"\\n"+w.private_key);
     }catch(e){
       console.error("[wallets] create",e);
       return d.show(ctx,"❌ Wallet creation failed.\\n\\nNo wallet was added.",{reply_markup:new InlineKeyboard().text("🔄 TRY AGAIN","mw:create").row().text("⬅️ BACK","wallets")});
