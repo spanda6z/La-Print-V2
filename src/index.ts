@@ -371,6 +371,7 @@ async function termsScreen(ctx:Ctx){
 }
 
 async function walletOnboardingScreen(ctx:Ctx){
+  ctx.session.onboardingWallet=true;
   await show(ctx,"💰 Trading Wallet\\n\\n"+
     "LAPrINT needs a trading wallet before you can configure trading.\\n\\n"+
     "Create a new Solana trading wallet or import an existing wallet.\\n\\n"+
