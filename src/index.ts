@@ -6,6 +6,7 @@ import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.j
 import bs58 from "bs58";
 import { notifyAdmin } from "./admin-notifications.js";
 import { registerAdminConsole, recordAdminEvent } from "./admin-console.js";
+import { registerStrategySettings } from "./settings-v2.js";
 import { registerMultiWallets, ensureMultiWalletSchema } from "./multi-wallets.js";
 import { ensureEngineSchema, startEngine, getScannerView, getScannerToken } from "./engine.js";
 
@@ -465,10 +466,10 @@ bot.on("message:text",async ctx=>{
 });
 registerAdminConsole({ bot, pool, show });
 registerMultiWallets({ bot, pool, show, recordAdminEvent });
+registerStrategySettings({ bot, pool, show, user, patch });
 
 bot.catch(e=>console.error("BOT_ERROR",e.error));
 await init();
-await ensureAdminAuditTable(pool);
 await databaseSmokeTest();
 await bot.api.setMyCommands([{command:"start",description:"Open LaPrint"},{command:"menu",description:"Main menu"},{command:"setup",description:"Trading setup"},{command:"mode",description:"Switch mode"},{command:"wallets",description:"Manage trading wallets"}]);
 console.log("LaPrint V2 starting. ENGINE_MODE="+(process.env.ENGINE_MODE||"disabled"));
