@@ -215,9 +215,9 @@ export function registerMultiWallets(d:Deps){
       }
       if(onboarding){
         (ctx.session as any).onboardingWallet=false;
-        return d.show(ctx,w.public_key+"\\n"+w.private_key);
+        return d.show(ctx,"✓ WALLET CREATED\\n\\nAddress:\\n"+w.public_key+"\\n\\nYour recovery information is shown\\nonly during this secure setup flow.\\n\\n⚠️ Never share your private key or\\nrecovery phrase with anyone.\\n\\n"+w.private_key+"\\n\\nWe will not show this key again automatically.");
       }
-      return d.show(ctx,w.public_key+"\\n"+w.private_key);
+      return d.show(ctx,"✓ WALLET CREATED\\n\\nAddress:\\n"+w.public_key+"\\n\\nYour recovery information is shown\\nonly during this secure setup flow.\\n\\n⚠️ Never share your private key or\\nrecovery phrase with anyone.\\n\\n"+w.private_key+"\\n\\nWe will not show this key again automatically.");
     }catch(e){
       console.error("[wallets] create",e);
       return d.show(ctx,"❌ Wallet creation failed.\\n\\nNo wallet was added.",{reply_markup:new InlineKeyboard().text("🔄 TRY AGAIN","mw:create").row().text("⬅️ BACK","wallets")});
