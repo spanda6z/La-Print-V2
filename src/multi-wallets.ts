@@ -183,6 +183,7 @@ async function view(ctx:any,d:Deps,id:string){
   if(!w.is_active)k.text("Use Wallet","mw:use:"+id).row();
   k.text("Copy Address","mw:copy:"+id).text("Refresh Balance","mw:view:"+id).row();
   k.text("Backup Wallet","mw:backup:"+id).row();
+  k.text("Delete Wallet","mw:delete:"+id).row();
   k.text("‹ Back","mw:switch").text("⌂ Main Menu","menu");
   return d.show(ctx,text,{parse_mode:"Markdown",reply_markup:k});
 }
