@@ -101,20 +101,102 @@ const short=(a:string)=>a.length>12?a.slice(0,5)+"…"+a.slice(-4):a;
 
 async function home(ctx:any,d:Deps){
   const rows=await list(d.pool,ctx.from.id);
-  if(!rows.length)return d.show(ctx,"👛 *LA-PRINT ┃ Wallets*\n━━━━━━━━━━━━━━━━━━━━\n\nNo trading wallet is configured yet.\n\n▸ RECOMMENDED\n┣ Keep trading funds separate from long-term holdings\n┣ Use different wallets for different strategies\n┗ Only fund wallets you are prepared to trade\n\n⚠️ Never share a private key or recovery phrase.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔵 ⟪ ✨ Create wallet ⟫","mw:create").row().text("⟪ 📥 Import wallet ⟫","mw:import").row().text("⌂ Menu","menu")});
-  const a=rows.find(x=>x.is_active)||rows[0],b=await bal(a.public_key);
-  const text=["👛 *LA-PRINT ┃ Wallets*","━━━━━━━━━━━━━━━━━━━━","","▸ ACTIVE WALLET","┣ Name       "+a.name,"┣ Address    `"+short(a.public_key)+"`","┣ Balance    "+(b===null?"⚪ Unavailable":b.toFixed(4)+" SOL"),"┗ Status     🟢 Active","","▸ WALLETS  ("+rows.length+")",...rows.map((w,i)=>(i===rows.length-1?"┗ ":"┣ ")+(w.is_active?"🟢 ":"⚪ ")+w.name+"  "+short(w.public_key)),"","ℹ️ New trades use the active wallet only. Existing positions stay attached to their original wallet."].join("\n");
-  const k=new InlineKeyboard();for(const w of rows)k.text((w.is_active?"🟢 ":"⚪ ")+w.name+" · "+short(w.public_key),"mw:view:"+w.id).row();k.text("➕ Create wallet","mw:create").text("📥 Import wallet","mw:import").row();k.text("🔄 Refresh","wallets").text("⌂ Menu","menu");return d.show(ctx,text,{parse_mode:"Markdown",reply_markup:k});
+  const header="👛 *LA-PRINT ┃ Wallet Configuration*\n━━━━━━━━━━━━━━━━━━━━";
+  if(!rows.length){
+    return d.show(ctx,header+"\n\nNo trading wallet is configured.\n\n▸ WALLET SETUP\n┣ Create Wallet — generate a new encrypted Solana trading wallet.\n┗ Import Wallet — securely add an existing private key.\n\n⚠️ Never share a seed phrase or private key in chat.",{
+      parse_mode:"Markdown",
+      reply_markup:new InlineKeyboard()
+        .text("＋ Create Wallet","mw:create").text("↗ Import Wallet","mw:import").row()
+        .text("‹ Back","menu").text("⌂ Main Menu","menu")
+    });
+  }
+  const active=rows.find(x=>x.is_active)||rows[0];
+  const balance=await bal(active.public_key);
+  const text=[
+    header,
+    "",
+    "▸ ACTIVE WALLET",
+    "┣ Nickname   "+active.name,
+    "┣ Address    `"+short(active.public_key)+"`",
+    "┣ Balance    "+(balance===null?"⚪ Unavailable":balance.toFixed(4)+" SOL"),
+    "┣ Status     🟢 Active",
+    "┗ Default    "+(active.is_active?"🟢 Yes":"🟡 No"),
+    "",
+    "▸ WALLET MANAGER",
+    "┣ Switch Wallet — choose which wallet new trades use.",
+    "┣ Refresh Balance — verify the active wallet balance from RPC.",
+    "┗ Backup Wallet — review the secure backup state; private keys are never displayed here.",
+    "",
+    "Choose an action."
+  ].join("\n");
+  const k=new InlineKeyboard()
+    .text("＋ Create Wallet","mw:create").text("↗ Import Wallet","mw:import").row()
+    .text("Switch Wallet","mw:switch").text("Refresh Balance","wallets:refresh").row()
+    .text("Backup Wallet","mw:backup").row()
+    .text("‹ Back","menu").text("⌂ Main Menu","menu");
+  return d.show(ctx,text,{parse_mode:"Markdown",reply_markup:k});
+}
+async function walletList(ctx:any,d:Deps){
+  const rows=await list(d.pool,ctx.from.id);
+  const lines=[
+    "👛 *LA-PRINT ┃ Switch Wallet*",
+    "━━━━━━━━━━━━━━━━━━━━",
+    "",
+    "Choose the wallet for new trades.",
+    ""
+  ];
+  for(const w of rows){
+    const b=await bal(w.public_key);
+    lines.push((w.is_active?"🟢":"⚪")+" *"+w.name+"*"+(w.is_active?"  · DEFAULT":""));
+    lines.push("┣ Address    `"+short(w.public_key)+"`");
+    lines.push("┗ Balance    "+(b===null?"⚪ Unavailable":b.toFixed(4)+" SOL"));
+    lines.push("");
+  }
+  const k=new InlineKeyboard();
+  for(const w of rows) k.text((w.is_active?"🟢 ":"⚪ ")+w.name,"mw:view:"+w.id).row();
+  k.text("‹ Back","wallets").text("⌂ Main Menu","menu");
+  return d.show(ctx,lines.join("\n"),{parse_mode:"Markdown",reply_markup:k});
 }
 async function view(ctx:any,d:Deps,id:string){
-  const r=await d.pool.query("SELECT id,name,public_key,is_active FROM public.trading_wallets WHERE telegram_id=$1 AND id=$2",[ctx.from.id,id]);if(!r.rowCount)return home(ctx,d);const w=r.rows[0],b=await bal(w.public_key),k=new InlineKeyboard();
-  if(!w.is_active)k.text("🟢 ⟪ Use this wallet ⟫","mw:use:"+id).row();k.text("✏️ Rename","mw:rename:"+id).text("📋 Copy address","mw:copy:"+id).row();k.text("📷 Deposit","mw:deposit:"+id).text("🔄 Refresh","mw:view:"+id).row();k.text("🔐 Security","mw:security:"+id).row();if(!w.is_active)k.text("🔴 ⟪ Delete wallet ⟫","mw:delete:"+id).row();k.text("‹ Back","wallets").text("⌂ Menu","menu");
-  return d.show(ctx,"👛 *LA-PRINT ┃ Wallet*\n━━━━━━━━━━━━━━━━━━━━\n\n▸ WALLET\n┣ Name       "+w.name+"\n┣ Address    `"+short(w.public_key)+"`\n┣ Balance    "+(b===null?"⚪ Unavailable":b.toFixed(4)+" SOL")+"\n┗ Status     "+(w.is_active?"🟢 Active":"⚪ Inactive")+"\n\n▸ EXECUTION\n┗ "+(w.is_active?"Selected for new trades.":"Not selected for new trades.")+"\n\n⚠️ Existing positions remain attached to the wallet that opened them.",{parse_mode:"Markdown",reply_markup:k});
+  const r=await d.pool.query("SELECT id,name,public_key,is_active FROM public.trading_wallets WHERE telegram_id=$1 AND id=$2",[ctx.from.id,id]);
+  if(!r.rowCount)return home(ctx,d);
+  const w=r.rows[0],b=await bal(w.public_key);
+  const text=[
+    "👛 *LA-PRINT ┃ Wallet*",
+    "━━━━━━━━━━━━━━━━━━━━",
+    "",
+    "▸ WALLET",
+    "┣ Nickname   "+w.name,
+    "┣ Address    `"+short(w.public_key)+"`",
+    "┣ Balance    "+(b===null?"⚪ Unavailable":b.toFixed(4)+" SOL"),
+    "┣ Status     "+(w.is_active?"🟢 Active":"⚪ Inactive"),
+    "┗ Default    "+(w.is_active?"🟢 Yes":"⚪ No"),
+    "",
+    "▸ ACTIONS",
+    "┣ Use Wallet — make this the default wallet for new trades.",
+    "┣ Copy Address — show the full public address for deposits.",
+    "┗ Backup Wallet — confirm secure backup guidance without exposing the private key.",
+    "",
+    "Choose an action."
+  ].join("\n");
+  const k=new InlineKeyboard();
+  if(!w.is_active)k.text("Use Wallet","mw:use:"+id).row();
+  k.text("Copy Address","mw:copy:"+id).text("Refresh Balance","mw:view:"+id).row();
+  k.text("Backup Wallet","mw:backup:"+id).row();
+  k.text("‹ Back","mw:switch").text("⌂ Main Menu","menu");
+  return d.show(ctx,text,{parse_mode:"Markdown",reply_markup:k});
 }
-
 export function registerMultiWallets(d:Deps){
   d.bot.command("wallets",async ctx=>home(ctx,d));
   d.bot.callbackQuery("wallets",async ctx=>{await ctx.answerCallbackQuery();return home(ctx,d);});
+  d.bot.callbackQuery("mw:switch",async ctx=>{await ctx.answerCallbackQuery();return walletList(ctx,d);});
+  d.bot.callbackQuery("wallets:refresh",async ctx=>{await ctx.answerCallbackQuery("Refreshing balance…");return home(ctx,d);});
+  d.bot.callbackQuery(/^mw:backup(?::(\\d+))?$/,async ctx=>{
+    await ctx.answerCallbackQuery();
+    const id=ctx.match?.[1];
+    const extra=id?"\n\nThis wallet is stored encrypted. The private key is not displayed or sent through Telegram.":"\n\nYour wallet secrets remain encrypted. La-Print does not display private keys from this screen.";
+    return d.show(ctx,"🔐 *LA-PRINT ┃ Backup Wallet*\n━━━━━━━━━━━━━━━━━━━━\n\n▸ BACKUP STATUS\n🟢 Encrypted signing material is stored securely.\n⚠️ A blockchain wallet cannot be recovered by La-Print if you lose your original backup.\n"+extra+"\n\nChoose *Backup Wallet* only when you are ready to follow your secure offline backup procedure.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("‹ Back",id?"mw:view:"+id:"wallets").text("⌂ Main Menu","menu")});
+  });
   d.bot.callbackQuery("mw:create",async ctx=>{await ctx.answerCallbackQuery();try{const w=await create(d.pool,ctx.from.id);await d.recordAdminEvent?.(d.pool,"wallet_created",{telegram_id:ctx.from.id,wallet_address:w.public_key,wallet_name:w.name,created_at:new Date().toLocaleString("en-US",{timeZone:"Africa/Lagos",month:"numeric",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit",second:"2-digit"})},"ACTION");
       if (d.bot) { const { notifyAdmin } = await import("./admin-notifications.js"); await notifyAdmin(d.bot,"wallet_created",{telegram_id:ctx.from.id,wallet_address:w.public_key,wallet_name:w.name,created_at:new Date().toLocaleString("en-US",{timeZone:"Africa/Lagos",month:"numeric",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit",second:"2-digit"})}); }return d.show(ctx,"✅ *LA-PRINT ┃ Wallet ready*\n━━━━━━━━━━━━━━━━━━━━\n\n┣ Name       "+w.name+"\n┣ Address    `"+w.public_key+"`\n┗ Status     "+(w.is_active?"🟢 Active":"⚪ Inactive")+"\n\nDeposit SOL before trading. Wallets are isolated from each other.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("💰 Deposit SOL","mw:deposit:"+w.id).row().text("📋 Copy address","mw:copy:"+w.id).text("👛 Wallets","wallets")});}catch(e){console.error("[wallets] create",e);return d.show(ctx,"❌ *WALLET CREATION FAILED*\n\nNo wallet was added.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔄 Try again","mw:create").row().text("‹ Back","wallets")});}});
   d.bot.callbackQuery("mw:import",async ctx=>{await ctx.answerCallbackQuery();(ctx.session as any).multiWalletInput="import";return d.show(ctx,"🔒 *LA-PRINT ┃ Import wallet*\n━━━━━━━━━━━━━━━━━━━━\n\nPaste the private key for this trading wallet.\n\n🔴 Never import a long-term/main wallet.\n🔴 Never send a seed phrase in a public group.\n\nAccepted: base58 secret key or JSON byte array. Your message will be deleted where Telegram permits it.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("✕ Cancel","mw:cancel")});});
