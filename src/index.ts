@@ -221,45 +221,132 @@ async function once(id:number,key:string) {
 }
 
 const back = (target="setup") => new InlineKeyboard().text("⬅️ BACK",target).text("🏠 MAIN MENU","menu");
-const modeKb = () => new InlineKeyboard().text("🎯 AUTOPILOT","mode:auto").text("✋ MANUAL","mode:manual");
-const setupKb = () => new InlineKeyboard().text("💰 Buy amount","setup:buy").text("🎯 Take profit","setup:tp").row().text("🛑 Stop loss","setup:sl").text("🔎 Market filters","setup:filters").row().text("🔔 Alerts","setup:alerts").text("👛 Wallets","wallets").row().text("🧾 Review","review").row().text("‹ Back","mode:back").text("⌂ Menu","menu");
-const mainKb = (active:boolean,mode:string) => {
-  const k = new InlineKeyboard()
-    .text(terminalAction(active ? (mode==="manual"?"Stop feed":"Stop autopilot") : "Start trading", active ? "danger" : "success"), active ? "trade:stop" : "trade:start")
-    .row()
-    .text("📊 Positions","positions").text("📡 Activity","activity")
-    .row()
-    .text("👛 Wallets","wallets").text("🔎 Discover","discover")
-    .row()
-    .text("🔔 Alerts","alerts").text("⚙️ Settings","setup")
-    .row();
+
+const modeKb = () => new InlineKeyboard()
+  .text("🎯 AUTOPILOT","mode:auto").text("✋ MANUAL","mode:manual")
+  .row().text("⬅️ BACK","menu").text("🏠 MAIN MENU","menu");
+
+const setupKb = (u:any) => {
+  const k=new InlineKeyboard()
+    .text("💰 BUY AMOUNT","setup:buy").text("🎯 TAKE PROFIT","setup:tp").row()
+    .text("🛑 STOP LOSS","setup:sl").text("🔎 FILTERS","setup:filters").row()
+    .text("🔔 ALERTS","setup:alerts").text("💰 WALLET","wallets").row()
+    .text("🧾 REVIEW","review").row()
+    .text("⬅️ BACK","mode:back").text("🏠 MAIN MENU","menu");
   return k;
 };
-const buyKb=()=>new InlineKeyboard().text("0.01 SOL","buy:0.01").text("0.05 SOL","buy:0.05").row().text("0.10 SOL","buy:0.10").text("0.25 SOL","buy:0.25").row().text("✏️ CUSTOM","buy:custom").row().text("⬅️ BACK","setup");
-const tpKb=()=>new InlineKeyboard().text("⚡ SIMPLE TP","tp:simple").text("🧠 PARTIAL EXITS","tp:partial").row().text("⬅️ BACK","setup");
-const slKb=()=>new InlineKeyboard().text("-10%","sl:-10").text("-15%","sl:-15").row().text("-20%","sl:-20").text("-25%","sl:-25").row().text("✏️ CUSTOM","sl:custom").row().text("⬅️ BACK","setup");
-const filterKb=()=>new InlineKeyboard().text("🟢 PRE-BOND","filter:pre").text("🚀 NEW LAUNCHES","filter:new").row().text("🔥 BOTH","filter:both").row().text("⚙️ FILTER SETTINGS","filter:settings").text("🧠 SMART","filter:smart").row().text("⬅️ BACK","setup");
-const alertKb=(a:any={})=>new InlineKeyboard().text("🟢 MILESTONES: ALWAYS ON","noop").row().text((a.newToken?"☑":"☐")+" NEW TOKEN","alert:new").text((a.liquidity?"☑":"☐")+" LIQUIDITY","alert:liq").row().text((a.volume?"☑":"☐")+" VOLUME","alert:vol").text((a.bonding?"☑":"☐")+" BONDING","alert:bond").row().text("💾 SAVE","alert:save").row().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu");
-const walletKb=(target="menu")=>new InlineKeyboard().text("➕ CREATE WALLET","wallet:create").text("📥 IMPORT WALLET","wallet:import").row().text("🔄 REFRESH","wallet:refresh").row().text("⬅️ BACK",target).text("🏠 MAIN MENU","menu");
+
+const mainKb = (active:boolean,mode:string) => {
+  const k=new InlineKeyboard();
+  k.text(active ? (mode==="manual"?"⏹️ STOP FEED":"⏹️ STOP AUTOPILOT") : (mode==="manual"?"▶️ START FEED":"🚀 START"), active?"trade:stop":"trade:start").row();
+  k.text("📊 POSITIONS","positions").text("📡 ACTIVITY","activity").row();
+  k.text("🔔 ALERTS","alerts").text("⚙️ SETTINGS","setup").row();
+  k.text("💰 WALLET","wallets").text("🔎 DISCOVER","discover").row();
+  return k;
+};
+
+const buyKb=()=>new InlineKeyboard()
+  .text("0.01 SOL","buy:0.01").text("0.05 SOL","buy:0.05").row()
+  .text("0.10 SOL","buy:0.10").text("0.25 SOL","buy:0.25").row()
+  .text("✏️ CUSTOM","buy:custom").row().text("⬅️ BACK","setup");
+
+const tpKb=()=>new InlineKeyboard()
+  .text("⚡ SIMPLE TP","tp:simple").text("🧠 PARTIAL EXITS","tp:partial").row()
+  .text("⬅️ BACK","setup");
+
+const slKb=()=>new InlineKeyboard()
+  .text("-10%","sl:-10").text("-15%","sl:-15").row()
+  .text("-20%","sl:-20").text("-25%","sl:-25").row()
+  .text("✏️ CUSTOM","sl:custom").row().text("⬅️ BACK","setup");
+
+const filterKb=()=>new InlineKeyboard()
+  .text("🟢 PRE-BOND","filter:pre").text("🚀 NEW LAUNCHES","filter:new").row()
+  .text("🔥 BOTH","filter:both").row()
+  .text("⚙️ FILTER SETTINGS","filter:settings").text("🧠 SMART FILTERS","filter:smart").row()
+  .text("⬅️ BACK","setup");
+
+const alertKb=(a:any={})=>new InlineKeyboard()
+  .text("🟢 MILESTONES: ALWAYS ON","noop").row()
+  .text((a.newToken?"☑":"☐")+" NEW TOKEN","alert:new").text((a.liquidity?"☑":"☐")+" LIQUIDITY","alert:liq").row()
+  .text((a.volume?"☑":"☐")+" VOLUME","alert:vol").text((a.bonding?"☑":"☐")+" BONDING","alert:bond").row()
+  .text((a.watchlist?"☑":"☐")+" WATCHLIST","alert:watch").row()
+  .text("💾 SAVE ALERTS","alert:save").row().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu");
 
 async function menu(ctx:Ctx){
   const u=await user(ctx.from!.id,ctx.from!.username);
-  const wallet=await pool.query("SELECT public_key FROM public.trading_wallets WHERE telegram_id=$1 AND is_active=TRUE",[ctx.from!.id]);
   const active=Boolean(u.trading_active);
-  const text =
-    "🚀 LA-PRINT Trade 🤖\n\n"+
-    "🔴 ENGINE: Unavailable\n\n"+
-    "🟢 WALLET: "+(wallet.rowCount?"Active":"Not Set")+"\n\n"+
-    "⚪ MODE: "+(u.mode==="manual"?"Manual":"Autopilot")+"\n\n"+
-    (active?"🟢":"⚪")+" TRADING: "+(active?"Running":"Stopped")+"\n\n"+
-    "⚪ POSITIONS: Not Connected\n\n"+
-    "⚪ PNL: Not Connected\n\n"+
-    "⚠️ Execution blocked until services verified.";
-  await show(ctx,text,{reply_markup:mainKb(active,u.mode||"autopilot")});
+  const wallet=await pool.query("SELECT name,public_key,is_active FROM public.trading_wallets WHERE telegram_id=$1 AND is_active=TRUE LIMIT 1",[ctx.from!.id]);
+  let balance=Number(u.wallet_balance||0);
+  if(wallet.rowCount){
+    try { balance=await readSolBalance(wallet.rows[0].public_key); await patch(ctx.from!.id,{wallet_balance:balance,...(balance>0?{funding_prompt_sent:false}:{})}); } catch {}
+  }
+  const mode=u.mode==="manual"?"MANUAL":"AUTOPILOT";
+  const engine=process.env.ENGINE_MODE==="enabled"?"🟢 ONLINE":"🟡 STANDBY";
+  const text="🤖 *TRADE AUTOPILOT*\\n\\n"+
+    engine+" Engine\\n"+
+    (mode==="MANUAL"?"✋":"🎯")+" Mode: "+mode+"\\n"+
+    "💰 Balance: "+(Number.isFinite(balance)?balance.toFixed(4):"—")+" SOL\\n"+
+    "📊 Positions: —\\n"+
+    "📈 PnL: —\\n\\n"+
+    "Choose an action.";
+  await show(ctx,text,{parse_mode:"Markdown",reply_markup:mainKb(active,u.mode||"autopilot")});
 }
-bot.command("start", async ctx => { await ctx.deleteMessage().catch(()=>{}); return menu(ctx); });
+
+async function modeScreen(ctx:Ctx){
+  const u=await user(ctx.from.id,ctx.from.username);
+  await show(ctx,"🎯 *TRADING MODE*\\n\\nChoose how qualified calls are handled.\\n\\n🎯 *AUTOPILOT*\\nQualified → execution when the execution engine is available.\\n\\n✋ *MANUAL*\\nQualified → you approve or reject before execution.\\n\\nNothing starts until setup is complete.",{parse_mode:"Markdown",reply_markup:modeKb()});
+}
+
+async function setupScreen(ctx:Ctx){
+  const u=await user(ctx.from.id,ctx.from.username);
+  const filters=u.filters||{};
+  const wallet=await pool.query("SELECT id FROM public.trading_wallets WHERE telegram_id=$1 AND is_active=TRUE",[ctx.from.id]);
+  const missing=[
+    !u.buy_amount?"❌ Buy amount":null,!u.tp_config?"❌ Take profit":null,!u.sl_percent?"❌ Stop loss":null,
+    !u.filters?"❌ Filters":null,!u.alerts?"❌ Alerts":null,!wallet.rowCount?"❌ Wallet":null
+  ].filter(Boolean);
+  const text="⚙️ *TRADE SETUP*\\n\\nConfigure your trading rules before you can receive trading calls.\\n\\n"+
+    "💰 Buy Amount   "+(u.buy_amount?"🟢":"❌")+"\\n"+
+    "🎯 Take Profit  "+(u.tp_config?"🟢":"❌")+"\\n"+
+    "🛑 Stop Loss    "+(u.sl_percent?"🟢":"❌")+"\\n"+
+    "🔎 Filters      "+(u.filters?"🟢":"❌")+"\\n"+
+    "🔔 Alerts       "+(u.alerts?"🟢":"❌")+"\\n"+
+    "💰 Wallet       "+(wallet.rowCount?"🟢":"❌")+"\\n\\n"+
+    (missing.length?"Next required: "+missing[0]:"All required settings are configured. Review before activation.")+"\\n";
+  await show(ctx,text,{parse_mode:"Markdown",reply_markup:setupKb(u)});
+}
+
+bot.command("start", async ctx => {
+  const u=await user(ctx.from!.id,ctx.from!.username);
+  if(u.onboarding_complete) return menu(ctx);
+  await show(ctx,"🤖 *TRADE AUTOPILOT*\\n\\nYour Telegram trading assistant for qualified calls and automated execution.\\n\\n🎯 *AUTOPILOT*\\nQualified calls can be executed automatically.\\n\\n✋ *MANUAL*\\nReview each call before execution.\\n\\nSet your trade rules, filters and alerts before trading begins.\\n\\nChoose your mode:",{parse_mode:"Markdown",reply_markup:modeKb()});
+});
 bot.command("menu", async ctx => menu(ctx));
 bot.callbackQuery("menu", async ctx => { await ctx.answerCallbackQuery("Main menu"); return menu(ctx); });
+
+bot.callbackQuery("mode:auto",async ctx=>{await ctx.answerCallbackQuery("Autopilot selected");await patch(ctx.from.id,{mode:"autopilot"});return setupScreen(ctx);});
+bot.callbackQuery("mode:manual",async ctx=>{await ctx.answerCallbackQuery("Manual selected");await patch(ctx.from.id,{mode:"manual"});return setupScreen(ctx);});
+bot.callbackQuery("mode:back",async ctx=>{await ctx.answerCallbackQuery();return modeScreen(ctx);});
+
+bot.callbackQuery("setup",async ctx=>{await ctx.answerCallbackQuery();return setupScreen(ctx);});
+bot.callbackQuery("setup:buy",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,"💰 *BUY AMOUNT*\\n\\nHow much SOL should each trade use?",{parse_mode:"Markdown",reply_markup:buyKb()});});
+bot.callbackQuery(/^buy:(0\\.01|0\\.05|0\\.10|0\\.25)$/,async ctx=>{await ctx.answerCallbackQuery();const v=Number(ctx.match[1]);await patch(ctx.from.id,{buy_amount:v});return show(ctx,"✅ *BUY AMOUNT SAVED*\\n\\nTrade size: *"+v+" SOL*\\n\\nNext required setting: Take Profit.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🎯 SET TAKE PROFIT","setup:tp").row().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu")});});
+bot.callbackQuery("buy:custom",async ctx=>{await ctx.answerCallbackQuery();ctx.session.input="buy";return show(ctx,"💰 *CUSTOM BUY AMOUNT*\\n\\nEnter the SOL amount for each trade.\\n\\nExample: 0.05",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu")});});
+
+bot.callbackQuery("setup:tp",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,"🎯 *TAKE PROFIT*\\n\\nChoose how profits should be taken.",{parse_mode:"Markdown",reply_markup:tpKb()});});
+bot.callbackQuery("tp:simple",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,"🎯 *SIMPLE TP*\\n\\nChoose your target.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("+20%","tp:set:20").text("+40%","tp:set:40").row().text("+75%","tp:set:75").text("+100%","tp:set:100").row().text("✏️ CUSTOM","tp:custom").row().text("⬅️ BACK","setup")});});
+bot.callbackQuery(/^tp:set:(20|40|75|100)$/,async ctx=>{await ctx.answerCallbackQuery();const v=Number(ctx.match[1]);await patch(ctx.from.id,{tp_config:{type:"simple",targets:[{pct:v,sellPct:100}]}});return show(ctx,"✅ *TAKE PROFIT SAVED*\\n\\nTarget: *+"+v+"%* → sell 100%.",{parseMode:"Markdown",reply_markup:new InlineKeyboard().text("🛑 SET STOP LOSS","setup:sl").row().text("🔎 SET FILTERS","setup:filters").text("⬅️ BACK","setup")});});
+bot.callbackQuery("tp:custom",async ctx=>{await ctx.answerCallbackQuery();ctx.session.input="tp";return show(ctx,"🎯 *CUSTOM TAKE PROFIT*\\n\\nEnter a positive target percentage. Example: 75",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu")});});
+bot.callbackQuery("tp:partial",async ctx=>{await ctx.answerCallbackQuery();const targets=[{pct:40,sellPct:50},{pct:100,sellPct:25},{pct:200,sellPct:15}];await patch(ctx.from.id,{tp_config:{type:"partial",targets}});return show(ctx,"🎯 *PARTIAL EXITS*\\n\\nTP1: +40% → Sell 50%\\nTP2: +100% → Sell 25%\\nTP3: +200% → Sell 15%\\nRemaining: 10%\\n\\n✅ TAKE PROFIT SAVED",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🛑 SET STOP LOSS","setup:sl").text("🔎 SET FILTERS","setup:filters").row().text("⬅️ BACK","setup")});});
+
+bot.callbackQuery("setup:sl",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,"🛑 *STOP LOSS*\\n\\nSet the maximum loss allowed for each position.",{parse_mode:"Markdown",reply_markup:slKb()});});
+bot.callbackQuery(/^sl:(-10|-15|-20|-25)$/,async ctx=>{await ctx.answerCallbackQuery();const v=Number(ctx.match[1]);await patch(ctx.from.id,{sl_percent:v});return show(ctx,"✅ *STOP LOSS SAVED*\\n\\nSL: *"+v+"%*\\n\\nNext: configure your token filters.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔎 SET FILTERS","setup:filters").text("🔔 ALERTS","setup:alerts").row().text("⬅️ BACK","setup")});});
+bot.callbackQuery("sl:custom",async ctx=>{await ctx.answerCallbackQuery();ctx.session.input="sl";return show(ctx,"🛑 *CUSTOM STOP LOSS*\\n\\nEnter a negative percentage between -1 and -100. Example: -20",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu")});});
+
+bot.callbackQuery("setup:filters",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,"🔎 *TOKEN FILTERS*\\n\\nOnly tokens that pass your filters can generate a trading call.\\n\\nChoose what you want to scan.",{parse_mode:"Markdown",reply_markup:filterKb()});});
+bot.callbackQuery(/^filter:(pre|new|both)$/,async ctx=>{await ctx.answerCallbackQuery();const u=await user(ctx.from.id,ctx.from.username);const type=ctx.match[1];const current=u.filters||{type:"both",minMc:16000,maxMc:null,minLiquidity:5000,minVolume5m:2000,minHolders:50,maxTop10:35,maxDev:5,minAgeSec:30,maxAgeMin:30,smart:true};const next={...current,type:type==="pre"?"pre":type==="new"?"new":"both"};await patch(ctx.from.id,{filters:next});return show(ctx,"✅ *MARKET TYPE SAVED*\\n\\nMode: *"+next.type.toUpperCase()+"*\\n\\nMarket cap never qualifies below the hard $16K floor.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("⚙️ FILTER SETTINGS","filter:settings").text("🧠 SMART FILTERS","filter:smart").row().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu")});});
+bot.callbackQuery("filter:settings",async ctx=>{await ctx.answerCallbackQuery();const u=await user(ctx.from.id,ctx.from.username);const f=u.filters||{type:"both",minMc:16000,maxMc:50000,minLiquidity:5000,minVolume5m:2000,minHolders:50,maxTop10:35,maxDev:5,minAgeSec:30,maxAgeMin:30,smart:true};const text="🔎 *FILTER SETTINGS*\\n\\nMarket Cap\\nMinimum: $"+f.minMc+"\\nMaximum: "+(f.maxMc==null?"$∞":"$"+f.maxMc)+"\\n\\nLiquidity\\nMinimum: $"+f.minLiquidity+"\\n\\n5M Volume\\nMinimum: $"+f.minVolume5m+"\\n\\nToken Age\\n"+f.minAgeSec+" seconds → "+f.maxAgeMin+" minutes\\n\\nHolders\\nMinimum: "+f.minHolders+"\\n\\nTop 10 Holders\\nMaximum: "+f.maxTop10+"%\\n\\nDev Holding\\nMaximum: "+f.maxDev+"%\\n\\nSmart Filters: "+(f.smart===false?"OFF":"ON");const k=new InlineKeyboard().text("💵 MARKET CAP","filter:edit:minMc").text("💧 LIQUIDITY","filter:edit:minLiquidity").row().text("📈 VOLUME","filter:edit:minVolume5m").text("👥 HOLDERS","filter:edit:minHolders").row().text("🐳 TOP HOLDERS","filter:edit:maxTop10").text("👨‍💻 DEV","filter:edit:maxDev").row().text("⏱️ TOKEN AGE","filter:edit:minAgeSec").text("🧠 SMART","filter:smart").row().text("✅ SAVE FILTERS","filter:save").row().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu");return show(ctx,text,{parse_mode:"Markdown",reply_markup:k});});
+bot.callbackQuery("filter:save",async ctx=>{await ctx.answerCallbackQuery();const u=await user(ctx.from.id,ctx.from.username);const f=u.filters||{};if(Number(f.minMc||0)<16000)return show(ctx,"⚠️ *FILTERS NOT SAVED*\\n\\nMinimum market cap cannot be below $16K.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("💵 MARKET CAP","filter:edit:minMc").text("⬅️ BACK","setup")});await patch(ctx.from.id,{filters:{...f,minMc:Math.max(16000,Number(f.minMc||16000)),smart:f.smart!==false}});return show(ctx,"✅ *FILTERS SAVED*\\n\\nOnly tokens passing the configured combination of market, quality and safety checks can generate a call.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔔 SET ALERTS","setup:alerts").text("🧾 REVIEW","review").row().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu")});});
 bot.callbackQuery(/^filter:edit:(minMc|maxMc|minLiquidity|minVolume5m|minHolders|maxTop10|maxDev|minAgeSec|maxAgeMin)$/,async ctx=>{
   await ctx.answerCallbackQuery();const field=ctx.match[1] as FilterField;ctx.session.input=("filter_"+field) as Session["input"];
   const labels:Record<FilterField,string>={minMc:"minimum market cap in USD",maxMc:"maximum market cap in USD",minLiquidity:"minimum liquidity in USD",minVolume5m:"minimum 5-minute volume in USD",minHolders:"minimum holder count",maxTop10:"maximum top-10 holder concentration percentage",maxDev:"maximum developer holding percentage",minAgeSec:"minimum token age in seconds",maxAgeMin:"maximum token age in minutes"};
