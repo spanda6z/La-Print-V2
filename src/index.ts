@@ -330,6 +330,25 @@ async function setupScreen(ctx:Ctx){
   await show(ctx,text,{reply_markup:k});
 }
 
+async function manualSetupScreen(ctx:Ctx){
+  const u=await user(ctx.from!.id,ctx.from!.username);
+  const wallet=await pool.query("SELECT id FROM public.trading_wallets WHERE telegram_id=$1 AND is_active=TRUE",[ctx.from!.id]);
+  await show(ctx,"⚙️ Custom Trading Setup\\n\\n"+
+    "Change any trading rule yourself.\\n\\n"+
+    "💰 Buy amount: "+(u.buy_amount?"✅ "+u.buy_amount+" SOL":"❌ Required")+"\\n"+
+    "🎯 Take profit: "+(u.tp_config?"✅ Saved":"❌ Required")+"\\n"+
+    "🛑 Stop loss: "+(u.sl_percent?"✅ "+u.sl_percent+"%":"❌ Required")+"\\n"+
+    "🔎 Filters: "+(u.filters?"✅ Saved":"❌ Required")+"\\n"+
+    "🔔 Alerts: "+(u.alerts?"✅ Saved":"❌ Required")+"\\n"+
+    "💰 Wallet: "+(wallet.rowCount?"✅ Ready":"❌ Required"),
+    {reply_markup:new InlineKeyboard()
+      .text("💰 BUY AMOUNT","setup:buy").text("🎯 TAKE PROFIT","setup:tp").row()
+      .text("🛑 STOP LOSS","setup:sl").text("🔎 FILTERS","setup:filters").row()
+      .text("🔔 ALERTS","setup:alerts").text("💰 WALLET","wallets").row()
+      .text("🧾 REVIEW","review").row()
+      .text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu")});
+}
+
 async function setupDetails(ctx:Ctx){
   const u=await user(ctx.from!.id,ctx.from!.username),f=u.filters||{};
   const tp=u.tp_config?.targets?.map((t:any)=>"+"+t.pct+"% → sell "+t.sellPct+"%").join(" / ")||"Not set";
