@@ -165,32 +165,30 @@ async function scanOnce(pool:Pool) {
   const listings=await discoverBirdeye();
   const users=await pool.query("SELECT telegram_id,strategy_profile,strategy_config,buy_amount,sl_percent,tp_config FROM public.users");
   let inspected=0,qualified=0,evaluated=0;
-  for(const item of listings.slice(0,50)){
+  for(const item of listings.slice(0,20)){
     const address=String(pick(item,"address","token_address","mint")||"");
     if(!address) continue;
     try{
       const ov=await overview(address),security=await mintSecurity(address),c=mapCandidate(item,ov,security);
       if(!c.address)continue;
-      let anyQualified=false,reasons:string[]=[];
       for(const u of users.rows){
         const strategy=await getStrategy(u),result=evaluateCandidate(c,strategy);
+        await pool.query(
+          "INSERT INTO public.engine_candidates(address,symbol,name,market_data,status,reject_reason,last_seen) VALUES($1,$2,$3,$4,$5,$6,NOW()) ON CONFLICT(address) DO UPDATE SET symbol=EXCLUDED.symbol,name=EXCLUDED.name,market_data=EXCLUDED.market_data,last_seen=NOW()",
+          [c.address,c.symbol,c.name,c.source,result.qualified?"qualified":"rejected",result.qualified?null:result.reasons.join(", ")]
+        );
         await pool.query(
           "INSERT INTO public.engine_candidate_users(telegram_id,address,status,reject_reason,strategy_profile,evaluated_at) VALUES($1,$2,$3,$4,$5,NOW()) ON CONFLICT(telegram_id,address) DO UPDATE SET status=EXCLUDED.status,reject_reason=EXCLUDED.reject_reason,strategy_profile=EXCLUDED.strategy_profile,evaluated_at=NOW()",
           [u.telegram_id,c.address,result.qualified?"qualified":"rejected",result.qualified?null:result.reasons.join(", "),strategy.profile||u.strategy_profile||"balanced"]
         );
         evaluated++;
-        if(result.qualified) anyQualified=true; else if(!reasons.length) reasons=result.reasons;
+        if(result.qualified)qualified++;
       }
-      await pool.query(
-        "INSERT INTO public.engine_candidates(address,symbol,name,market_data,status,reject_reason,last_seen) VALUES($1,$2,$3,$4,$5,$6,NOW()) ON CONFLICT(address) DO UPDATE SET symbol=EXCLUDED.symbol,name=EXCLUDED.name,market_data=EXCLUDED.market_data,status=EXCLUDED.status,reject_reason=EXCLUDED.reject_reason,last_seen=NOW()",
-        [c.address,c.symbol,c.name,c.source,anyQualified?"qualified":"rejected",anyQualified?null:reasons.join(", ")||"no user strategy"]
-      );
-      inspected++;if(anyQualified)qualified++;
+      inspected++;
     }catch(e){console.warn("[scanner] token inspect failed",address,String(e).slice(0,180));}
   }
   console.log("[scanner] scan complete",JSON.stringify({discovered:listings.length,inspected,qualified,evaluated}));
 }
-
 async function monitorPositions(pool:Pool) {
   // Position monitoring deliberately does not fabricate marks or execute exits until token-account
   // balance reconciliation and a sell-transaction path are enabled.
