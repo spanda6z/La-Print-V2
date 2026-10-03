@@ -605,7 +605,7 @@ registerStrategySettings({ bot, pool, show, user, patch });
 bot.catch(e=>console.error("BOT_ERROR",e.error));
 await init();
 await databaseSmokeTest();
-await bot.api.setMyCommands([{command:"start",description:"Open LaPrint"},{command:"menu",description:"Main menu"},{command:"setup",description:"Trading setup"},{command:"mode",description:"Switch mode"},{command:"wallets",description:"Manage trading wallets"}]);
+await bot.api.setMyCommands([{command:"start",description:"Open LaPrint"},{command:"menu",description:"Main menu"},{command:"setup",description:"Trade Autopilot setup"},{command:"strategy",description:"Advanced strategy settings"},{command:"mode",description:"Switch mode"},{command:"wallets",description:"Manage trading wallets"}]);
 console.log("LaPrint V2 starting. ENGINE_MODE="+(process.env.ENGINE_MODE||"disabled"));
 const stopEngine = startEngine(pool,bot);
 const pollingClient = await acquireTelegramPollingLock();
