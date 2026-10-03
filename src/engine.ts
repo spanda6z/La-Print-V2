@@ -1,5 +1,6 @@
 import { Connection, Keypair, PublicKey, VersionedTransaction, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { getActiveTradingWallet } from "./multi-wallets.js";
+import { InlineKeyboard } from "grammy";
 
 type Pool = any;
 type BotLike = any;
@@ -208,7 +209,7 @@ async function saveEvent(pool:Pool,id:number|null,type:string,address:string|nul
   await pool.query("INSERT INTO public.engine_events(telegram_id,event_type,token_address,details) VALUES($1,$2,$3,$4)",[id,type,address,details]);
 }
 
-async function scanOnce(pool:Pool) {
+async function scanOnce(pool:Pool, bot?:BotLike) {
   const listings=takePumpCandidates(20);
   const users=await pool.query("SELECT telegram_id,strategy_profile,strategy_config,buy_amount,sl_percent,tp_config FROM public.users");
   let inspected=0,qualified=0,evaluated=0;
@@ -235,7 +236,22 @@ async function scanOnce(pool:Pool) {
           [u.telegram_id,c.address,result.qualified?"qualified":"rejected",result.qualified?null:result.reasons.join(", "),strategy.profile||u.strategy_profile||"balanced"]
         );
         evaluated++;
-        if(result.qualified)qualified++;
+        if(result.qualified){
+  qualified++;
+  if(bot && u.trading_active){
+    const eventKey="qualified_call:"+c.address;
+    const dedupe=await pool.query("INSERT INTO public.notification_events(telegram_id,event_key) VALUES($1,$2) ON CONFLICT DO NOTHING",[u.telegram_id,eventKey]);
+    if(dedupe.rowCount===1){
+      const tp=(strategy.execution?.takeProfit||[]).map((t:any)=>"+"+t.pct).join(" / ")||"—";
+      const sl=strategy.execution?.stopLossPct ?? "—";
+      const msg=["📡 *QUALIFIED CALL*","","🪙 *"+c.symbol+"*","","CA:","`"+c.address+"`","","💵 MC: $"+(c.marketCap??"—"),"💧 Liquidity: $"+(c.liquidity??"—"),"📈 5M Volume: $"+(c.volume5m??"—"),"","🎯 Buy: "+(strategy.execution?.buyAmountSol??"—")+" SOL","🎯 TP: "+tp+"%","🛑 SL: "+sl+"%","",""+(u.mode==="manual"?"Review this call before execution.":"Qualified and ready for the configured execution path.")].join("\n");
+      const k=new InlineKeyboard().text("📊 VIEW DETAILS","call:details:"+c.address);
+      if(u.mode==="manual") k.row().text("✅ APPROVE","call:approve:"+c.address).text("❌ REJECT","call:reject:"+c.address);
+      await bot.api.sendMessage(u.telegram_id,msg,{parse_mode:"Markdown",reply_markup:k});
+      await saveEvent(pool,u.telegram_id,"qualified_call",c.address,{mode:u.mode||"autopilot",strategy:strategy.profile||"balanced"});
+    }
+  }
+}
       }
       inspected++;
     }catch(e){console.warn("[scanner] token inspect failed",address,String(e).slice(0,180));}
@@ -257,7 +273,7 @@ export function startEngine(pool:Pool,bot:BotLike) {
   const enabled=scannerEnabled || engineEnabled;
   const tick=async()=>{
     if(scanning)return;scanning=true;
-    try{await scanOnce(pool);if(engineEnabled)await monitorPositions(pool);}
+    try{await scanOnce(pool,bot);if(engineEnabled)await monitorPositions(pool);}
     catch(e){console.error("[scanner] cycle failed",e);}
     finally{scanning=false;}
   };
