@@ -424,21 +424,31 @@ async function readiness(ctx:Ctx){
   const u=await user(ctx.from.id,ctx.from.username);
   const wallet=await pool.query("SELECT id,name,public_key,is_active FROM public.trading_wallets WHERE telegram_id=$1 AND is_active=TRUE LIMIT 1",[ctx.from.id]);
   const missing:string[]=[];
-  if(!u.buy_amount)missing.push("Buy amount");
-  if(!u.tp_config)missing.push("Take profit");
-  if(!u.sl_percent)missing.push("Stop loss");
-  if(!u.filters)missing.push("Filters");
-  if(!u.alerts)missing.push("Alerts");
+  if(u.buy_amount==null)missing.push("Buy amount");
+  if(u.tp_config==null)missing.push("Take profit");
+  if(u.sl_percent==null)missing.push("Stop loss");
+  if(u.filters==null)missing.push("Filters");
+  if(u.alerts==null)missing.push("Alerts");
   if(!wallet.rowCount)missing.push("Wallet");
   let balance=0;
   if(wallet.rowCount){
     try{balance=await readSolBalance(wallet.rows[0].public_key);await patch(ctx.from.id,{wallet_balance:balance,...(balance>0?{funding_prompt_sent:false}:{})});}
     catch{missing.push("Verified wallet balance");}
   }
-  if(wallet.rowCount && balance<=0 && !missing.includes("Verified wallet balance")) missing.push("Funded wallet");
-  return {u,wallet:wallet.rows[0]||null,balance,missing};
+  if(wallet.rowCount && balance<=0 && !missing.includes("Verified wallet balance"))missing.push("Funded wallet");
+  if(!missing.length || !missing.some(x=>x!=="Verified wallet balance"&&x!=="Funded wallet")){
+    const f=u.filters||{},base=u.strategy_config||{};
+    const marketTypes=f.type==="pre"?["pre_bond"]:f.type==="new"?["new_launch"]:["new_launch","pre_bond"];
+    const cfg={
+      ...base,profile:u.strategy_profile||base.profile||"balanced",customized:true,
+      version:Number(base.version||u.strategy_version||1)+1,
+      discovery:{...(base.discovery||{}),marketCapMin:Math.max(16000,Number(f.minMc||16000)),marketCapMax:f.maxMc==null?null:Number(f.maxMc),liquidityMin:Number(f.minLiquidity||5000),volume5mMin:Number(f.minVolume5m||2000),tokenAgeMinSec:Number(f.minAgeSec||30),tokenAgeMaxSec:f.maxAgeMin==null?1800:Number(f.maxAgeMin)*60,holderMin:Number(f.minHolders||50),top10Max:Number(f.maxTop10??35),devMax:Number(f.maxDev??5),marketTypes,smartFilters:f.smart!==false,strictData:f.strictData!==false},
+      execution:{...(base.execution||{}),buyAmountSol:Number(u.buy_amount),maxBuyAmountSol:Number(u.buy_amount),takeProfit:u.tp_config?.targets||[],stopLossPct:Number(u.sl_percent),trailing:base.execution?.trailing||{enabled:false,activationPct:30,pullbackPct:15},maxOpenPositions:base.execution?.maxOpenPositions||3,dailySpendingLimitSol:base.execution?.dailySpendingLimitSol??null}
+    };
+    await patch(ctx.from.id,{strategy_config:cfg,strategy_profile:cfg.profile,strategy_version:cfg.version});
+  }
+  return {u:await user(ctx.from.id,ctx.from.username),wallet:wallet.rows[0]||null,balance,missing};
 }
-
 bot.callbackQuery("review",async ctx=>{
   await ctx.answerCallbackQuery("Reviewing setup…");
   const r=await readiness(ctx),u=r.u,f=u.filters||{},tp=u.tp_config?.targets?.map((t:any)=>"+"+t.pct+"% → sell "+t.sellPct+"%").join(" / ")||"Not set";
