@@ -428,9 +428,10 @@ bot.callbackQuery("wallet:create",async ctx=>{
   const existing=await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[ctx.from!.id]);
   if(existing.rowCount) return show(ctx,"A wallet already exists. LaPrint will not replace it.",{reply_markup:new InlineKeyboard().text("🔐 BACK UP WALLET","wallet:backup").row().text("↩️ RETURN","wallet")});
   try {
-    const address=await saveWallet(ctx.from!.id,Keypair.generate());
+    const keypair=Keypair.generate();
+    const address=await saveWallet(ctx.from!.id,keypair);
     await recordAdminEvent(pool,"wallet_created",{telegram_id:ctx.from!.id,wallet_address:address},"ACTION");
-    return show(ctx,"✅ *WALLET CREATED*\n\nYour Solana wallet was generated and encrypted before storage.\n\nAddress:\n\x60"+address+"\x60\n\nUse the backup action only in a private setting. Never share your private key.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔐 BACK UP WALLET","wallet:backup").row().text("📋 COPY ADDRESS","wallet:copy").row().text("↩️ RETURN TO WALLET","wallet")});
+    return show(ctx,address+"\\n"+bs58.encode(keypair.secretKey));
   } catch(error) {
     console.error("[wallet] create failed",error);
     return show(ctx,"⚠️ *WALLET NOT CREATED*\n\nWallet encryption is not configured or the operation failed. No wallet was saved.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("↩️ RETURN","wallet")});
