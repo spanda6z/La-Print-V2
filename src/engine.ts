@@ -102,7 +102,7 @@ function startPumpNativeStream(){
         const ts=Date.now();
         if(pumpSeen.has(address) && ts-(pumpSeen.get(address)||0)<10*60_000)return;
         pumpSeen.set(address,ts);
-        pumpQueue.push({...raw,address,__pumpNative:true});
+        pumpQueue.push({...raw,address,__pumpNative:true,__discoveredAt:ts});
         while(pumpQueue.length>200)pumpQueue.shift();
       }catch(e){console.warn("[scanner] invalid Pump.fun stream event",String(e).slice(0,120));}
     });
@@ -154,7 +154,7 @@ async function overview(address:string):Promise<any> {
 
 function mapCandidate(raw:any,ov:any,security:Security):Candidate {
   const address=String(pick(raw,"address","token_address","mint")||pick(ov,"address","token_address")||"");
-  const created=pick(raw,"created_at","creation_time","listed_at","createdAt");
+  const created=pick(raw,"created_at","creation_time","listed_at","createdAt","__discoveredAt");
   const createdAt=created==null?null:(typeof created==="number"?(created<1e12?created*1000:created):Date.parse(String(created)));
   const v5=pick(ov,"volume_5m_usd","v5m","volume5m") ?? pick(raw,"volume_5m_usd","volume5m");
   return {
@@ -172,11 +172,11 @@ export function evaluateCandidate(c:Candidate,s:Strategy) {
   const d=s.discovery||{};
   const checks:[string,boolean][]=[
     ["invalid mint",!!c.address && (()=>{try{new PublicKey(c.address);return true}catch{return false}})()],
-    ["market cap unavailable",c.marketCap!==null],["market cap below minimum",c.marketCap!==null&&c.marketCap>=(d.marketCapMin??0)],
+    ["market cap unavailable",c.marketCap!==null],["market cap below minimum",c.marketCap!==null&&c.marketCap>=Math.max(16000,d.marketCapMin??0)],
     ["market cap above maximum",d.marketCapMax==null||c.marketCap!==null&&c.marketCap<=d.marketCapMax],
     ["liquidity unavailable",c.liquidity!==null],["liquidity below minimum",c.liquidity!==null&&c.liquidity>=(d.liquidityMin??0)],
     ["5m volume unavailable",c.volume5m!==null],["5m volume below minimum",c.volume5m!==null&&c.volume5m>=(d.volume5mMin??0)],
-    ["creation time unavailable",c.createdAt!==null],["token too young",c.createdAt!==null&&(Date.now()-c.createdAt)/1000>=(d.tokenAgeMinSec??0)],
+    ["creation time unavailable",c.createdAt!==null],["token too young",c.createdAt!==null&&(Date.now()-c.createdAt)/1000>=(d.tokenAgeMinSec??0)],\n    ["token age unavailable",c.createdAt!==null],["token too old",c.createdAt!==null&&d.tokenAgeMaxSec!=null&&(Date.now()-c.createdAt)/1000<=d.tokenAgeMaxSec],
     ["holder count unavailable",c.holders!==null],["holder count below minimum",c.holders!==null&&c.holders>=(d.holderMin??0)],
     ["top-10 concentration unavailable",c.top10!==null],["top-10 concentration too high",c.top10!==null&&c.top10<=(d.top10Max??100)],
     ["developer concentration unavailable",c.devPct!==null],["developer concentration too high",c.devPct!==null&&c.devPct<=(d.devMax??100)]
