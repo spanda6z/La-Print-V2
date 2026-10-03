@@ -239,7 +239,7 @@ export async function openStrategySettings(ctx: any, deps: Deps) {
 export function registerStrategySettings(deps: Deps) {
   const { bot } = deps;
 
-  bot.command("setup", (ctx: any) => openStrategySettings(ctx, deps));
+  bot.command("strategy", (ctx: any) => openStrategySettings(ctx, deps));
   bot.callbackQuery("settings:v2", async (ctx: any) => {
     await ctx.answerCallbackQuery();
     ctx.session.input = undefined;
