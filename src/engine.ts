@@ -76,7 +76,7 @@ async function discoverBirdeye():Promise<any[]> {
   const key=process.env.BIRDEYE_API_KEY;
   if(!key) throw new Error("BIRDEYE_API_KEY is not configured");
   const base=process.env.BIRDEYE_API_BASE || "https://public-api.birdeye.so";
-  const data=await apiJson(base+"/defi/v2/tokens/new_listing?limit=50&meme_platform_enabled=true",authHeaders(key));
+  const data=await apiJson(base+"/defi/v2/tokens/new_listing?limit=20&meme_platform_enabled=true",authHeaders(key));
   return Array.isArray(data)?data:(data?.items||data?.tokens||[]);
 }
 
