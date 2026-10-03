@@ -177,7 +177,8 @@ export function evaluateCandidate(c:Candidate,s:Strategy) {
     ["market cap above maximum",d.marketCapMax==null||c.marketCap!==null&&c.marketCap<=d.marketCapMax],
     ["liquidity unavailable",c.liquidity!==null],["liquidity below minimum",c.liquidity!==null&&c.liquidity>=(d.liquidityMin??0)],
     ["5m volume unavailable",c.volume5m!==null],["5m volume below minimum",c.volume5m!==null&&c.volume5m>=(d.volume5mMin??0)],
-    ["creation time unavailable",c.createdAt!==null],["token too young",c.createdAt!==null&&(Date.now()-c.createdAt)/1000>=(d.tokenAgeMinSec??0)],\n    ["token age unavailable",c.createdAt!==null],["token too old",c.createdAt!==null&&d.tokenAgeMaxSec!=null&&(Date.now()-c.createdAt)/1000<=d.tokenAgeMaxSec],
+    ["creation time unavailable",c.createdAt!==null],["token too young",c.createdAt!==null&&(Date.now()-c.createdAt)/1000>=(d.tokenAgeMinSec??0)],
+    ["token age unavailable",c.createdAt!==null],["token too old",c.createdAt!==null&&d.tokenAgeMaxSec!=null&&(Date.now()-c.createdAt)/1000<=d.tokenAgeMaxSec],
     ["holder count unavailable",c.holders!==null],["holder count below minimum",c.holders!==null&&c.holders>=(d.holderMin??0)],
     ["top-10 concentration unavailable",c.top10!==null],["top-10 concentration too high",c.top10!==null&&c.top10<=(d.top10Max??100)],
     ["developer concentration unavailable",c.devPct!==null],["developer concentration too high",c.devPct!==null&&c.devPct<=(d.devMax??100)]
