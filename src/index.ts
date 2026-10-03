@@ -265,6 +265,7 @@ const filterKb=()=>new InlineKeyboard()
   .text("⚙️ FILTER SETTINGS","filter:settings").text("🧠 SMART FILTERS","filter:smart").row()
   .text("⬅️ BACK","setup");
 
+const walletKb=(target="menu")=>new InlineKeyboard().text("➕ CREATE WALLET","mw:create").text("📥 IMPORT WALLET","mw:import").row().text("🔄 REFRESH","wallets:refresh").row().text("⬅️ BACK",target).text("🏠 MAIN MENU","menu");
 const alertKb=(a:any={})=>new InlineKeyboard()
   .text("🟢 MILESTONES: ALWAYS ON","noop").row()
   .text((a.newToken?"☑":"☐")+" NEW TOKEN","alert:new").text((a.liquidity?"☑":"☐")+" LIQUIDITY","alert:liq").row()
@@ -293,14 +294,14 @@ async function menu(ctx:Ctx){
 }
 
 async function modeScreen(ctx:Ctx){
-  const u=await user(ctx.from.id,ctx.from.username);
+  const u=await user(ctx.from!.id,ctx.from!.username);
   await show(ctx,"🎯 *TRADING MODE*\\n\\nChoose how qualified calls are handled.\\n\\n🎯 *AUTOPILOT*\\nQualified → execution when the execution engine is available.\\n\\n✋ *MANUAL*\\nQualified → you approve or reject before execution.\\n\\nNothing starts until setup is complete.",{parse_mode:"Markdown",reply_markup:modeKb()});
 }
 
 async function setupScreen(ctx:Ctx){
-  const u=await user(ctx.from.id,ctx.from.username);
+  const u=await user(ctx.from!.id,ctx.from!.username);
   const filters=u.filters||{};
-  const wallet=await pool.query("SELECT id FROM public.trading_wallets WHERE telegram_id=$1 AND is_active=TRUE",[ctx.from.id]);
+  const wallet=await pool.query("SELECT id FROM public.trading_wallets WHERE telegram_id=$1 AND is_active=TRUE",[ctx.from!.id]);
   const missing=[
     !u.buy_amount?"❌ Buy amount":null,!u.tp_config?"❌ Take profit":null,!u.sl_percent?"❌ Stop loss":null,
     !u.filters?"❌ Filters":null,!u.alerts?"❌ Alerts":null,!wallet.rowCount?"❌ Wallet":null
@@ -324,59 +325,59 @@ bot.command("start", async ctx => {
 bot.command("menu", async ctx => menu(ctx));
 bot.callbackQuery("menu", async ctx => { await ctx.answerCallbackQuery("Main menu"); return menu(ctx); });
 
-bot.callbackQuery("mode:auto",async ctx=>{await ctx.answerCallbackQuery("Autopilot selected");await patch(ctx.from.id,{mode:"autopilot"});return setupScreen(ctx);});
-bot.callbackQuery("mode:manual",async ctx=>{await ctx.answerCallbackQuery("Manual selected");await patch(ctx.from.id,{mode:"manual"});return setupScreen(ctx);});
+bot.callbackQuery("mode:auto",async ctx=>{await ctx.answerCallbackQuery("Autopilot selected");await patch(ctx.from!.id,{mode:"autopilot"});return setupScreen(ctx);});
+bot.callbackQuery("mode:manual",async ctx=>{await ctx.answerCallbackQuery("Manual selected");await patch(ctx.from!.id,{mode:"manual"});return setupScreen(ctx);});
 bot.callbackQuery("mode:back",async ctx=>{await ctx.answerCallbackQuery();return modeScreen(ctx);});
 
 bot.callbackQuery("setup",async ctx=>{await ctx.answerCallbackQuery();return setupScreen(ctx);});
 bot.callbackQuery("setup:buy",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,"💰 *BUY AMOUNT*\\n\\nHow much SOL should each trade use?",{parse_mode:"Markdown",reply_markup:buyKb()});});
-bot.callbackQuery(/^buy:(0\\.01|0\\.05|0\\.10|0\\.25)$/,async ctx=>{await ctx.answerCallbackQuery();const v=Number(ctx.match[1]);await patch(ctx.from.id,{buy_amount:v});return show(ctx,"✅ *BUY AMOUNT SAVED*\\n\\nTrade size: *"+v+" SOL*\\n\\nNext required setting: Take Profit.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🎯 SET TAKE PROFIT","setup:tp").row().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu")});});
+bot.callbackQuery(/^buy:(0\\.01|0\\.05|0\\.10|0\\.25)$/,async ctx=>{await ctx.answerCallbackQuery();const v=Number(ctx.match[1]);await patch(ctx.from!.id,{buy_amount:v});return show(ctx,"✅ *BUY AMOUNT SAVED*\\n\\nTrade size: *"+v+" SOL*\\n\\nNext required setting: Take Profit.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🎯 SET TAKE PROFIT","setup:tp").row().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu")});});
 bot.callbackQuery("buy:custom",async ctx=>{await ctx.answerCallbackQuery();ctx.session.input="buy";return show(ctx,"💰 *CUSTOM BUY AMOUNT*\\n\\nEnter the SOL amount for each trade.\\n\\nExample: 0.05",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu")});});
 
 bot.callbackQuery("setup:tp",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,"🎯 *TAKE PROFIT*\\n\\nChoose how profits should be taken.",{parse_mode:"Markdown",reply_markup:tpKb()});});
 bot.callbackQuery("tp:simple",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,"🎯 *SIMPLE TP*\\n\\nChoose your target.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("+20%","tp:set:20").text("+40%","tp:set:40").row().text("+75%","tp:set:75").text("+100%","tp:set:100").row().text("✏️ CUSTOM","tp:custom").row().text("⬅️ BACK","setup")});});
-bot.callbackQuery(/^tp:set:(20|40|75|100)$/,async ctx=>{await ctx.answerCallbackQuery();const v=Number(ctx.match[1]);await patch(ctx.from.id,{tp_config:{type:"simple",targets:[{pct:v,sellPct:100}]}});return show(ctx,"✅ *TAKE PROFIT SAVED*\\n\\nTarget: *+"+v+"%* → sell 100%.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🛑 SET STOP LOSS","setup:sl").row().text("🔎 SET FILTERS","setup:filters").text("⬅️ BACK","setup")});});
+bot.callbackQuery(/^tp:set:(20|40|75|100)$/,async ctx=>{await ctx.answerCallbackQuery();const v=Number(ctx.match[1]);await patch(ctx.from!.id,{tp_config:{type:"simple",targets:[{pct:v,sellPct:100}]}});return show(ctx,"✅ *TAKE PROFIT SAVED*\\n\\nTarget: *+"+v+"%* → sell 100%.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🛑 SET STOP LOSS","setup:sl").row().text("🔎 SET FILTERS","setup:filters").text("⬅️ BACK","setup")});});
 bot.callbackQuery("tp:custom",async ctx=>{await ctx.answerCallbackQuery();ctx.session.input="tp";return show(ctx,"🎯 *CUSTOM TAKE PROFIT*\\n\\nEnter a positive target percentage. Example: 75",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu")});});
-bot.callbackQuery("tp:partial",async ctx=>{await ctx.answerCallbackQuery();const targets=[{pct:40,sellPct:50},{pct:100,sellPct:25},{pct:200,sellPct:15}];await patch(ctx.from.id,{tp_config:{type:"partial",targets}});return show(ctx,"🎯 *PARTIAL EXITS*\\n\\nTP1: +40% → Sell 50%\\nTP2: +100% → Sell 25%\\nTP3: +200% → Sell 15%\\nRemaining: 10%\\n\\n✅ TAKE PROFIT SAVED",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🛑 SET STOP LOSS","setup:sl").text("🔎 SET FILTERS","setup:filters").row().text("⬅️ BACK","setup")});});
+bot.callbackQuery("tp:partial",async ctx=>{await ctx.answerCallbackQuery();const targets=[{pct:40,sellPct:50},{pct:100,sellPct:25},{pct:200,sellPct:15}];await patch(ctx.from!.id,{tp_config:{type:"partial",targets}});return show(ctx,"🎯 *PARTIAL EXITS*\\n\\nTP1: +40% → Sell 50%\\nTP2: +100% → Sell 25%\\nTP3: +200% → Sell 15%\\nRemaining: 10%\\n\\n✅ TAKE PROFIT SAVED",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🛑 SET STOP LOSS","setup:sl").text("🔎 SET FILTERS","setup:filters").row().text("⬅️ BACK","setup")});});
 
 bot.callbackQuery("setup:sl",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,"🛑 *STOP LOSS*\\n\\nSet the maximum loss allowed for each position.",{parse_mode:"Markdown",reply_markup:slKb()});});
-bot.callbackQuery(/^sl:(-10|-15|-20|-25)$/,async ctx=>{await ctx.answerCallbackQuery();const v=Number(ctx.match[1]);await patch(ctx.from.id,{sl_percent:v});return show(ctx,"✅ *STOP LOSS SAVED*\\n\\nSL: *"+v+"%*\\n\\nNext: configure your token filters.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔎 SET FILTERS","setup:filters").text("🔔 ALERTS","setup:alerts").row().text("⬅️ BACK","setup")});});
+bot.callbackQuery(/^sl:(-10|-15|-20|-25)$/,async ctx=>{await ctx.answerCallbackQuery();const v=Number(ctx.match[1]);await patch(ctx.from!.id,{sl_percent:v});return show(ctx,"✅ *STOP LOSS SAVED*\\n\\nSL: *"+v+"%*\\n\\nNext: configure your token filters.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔎 SET FILTERS","setup:filters").text("🔔 ALERTS","setup:alerts").row().text("⬅️ BACK","setup")});});
 bot.callbackQuery("sl:custom",async ctx=>{await ctx.answerCallbackQuery();ctx.session.input="sl";return show(ctx,"🛑 *CUSTOM STOP LOSS*\\n\\nEnter a negative percentage between -1 and -100. Example: -20",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu")});});
 
 bot.callbackQuery("setup:filters",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,"🔎 *TOKEN FILTERS*\\n\\nOnly tokens that pass your filters can generate a trading call.\\n\\nChoose what you want to scan.",{parse_mode:"Markdown",reply_markup:filterKb()});});
-bot.callbackQuery(/^filter:(pre|new|both)$/,async ctx=>{await ctx.answerCallbackQuery();const u=await user(ctx.from.id,ctx.from.username);const type=ctx.match[1];const current=u.filters||{type:"both",minMc:16000,maxMc:null,minLiquidity:5000,minVolume5m:2000,minHolders:50,maxTop10:35,maxDev:5,minAgeSec:30,maxAgeMin:30,smart:true};const next={...current,type:type==="pre"?"pre":type==="new"?"new":"both"};await patch(ctx.from.id,{filters:next});return show(ctx,"✅ *MARKET TYPE SAVED*\\n\\nMode: *"+next.type.toUpperCase()+"*\\n\\nMarket cap never qualifies below the hard $16K floor.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("⚙️ FILTER SETTINGS","filter:settings").text("🧠 SMART FILTERS","filter:smart").row().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu")});});
-bot.callbackQuery("filter:settings",async ctx=>{await ctx.answerCallbackQuery();const u=await user(ctx.from.id,ctx.from.username);const f=u.filters||{type:"both",minMc:16000,maxMc:50000,minLiquidity:5000,minVolume5m:2000,minHolders:50,maxTop10:35,maxDev:5,minAgeSec:30,maxAgeMin:30,smart:true};const text="🔎 *FILTER SETTINGS*\\n\\nMarket Cap\\nMinimum: $"+f.minMc+"\\nMaximum: "+(f.maxMc==null?"$∞":"$"+f.maxMc)+"\\n\\nLiquidity\\nMinimum: $"+f.minLiquidity+"\\n\\n5M Volume\\nMinimum: $"+f.minVolume5m+"\\n\\nToken Age\\n"+f.minAgeSec+" seconds → "+f.maxAgeMin+" minutes\\n\\nHolders\\nMinimum: "+f.minHolders+"\\n\\nTop 10 Holders\\nMaximum: "+f.maxTop10+"%\\n\\nDev Holding\\nMaximum: "+f.maxDev+"%\\n\\nSmart Filters: "+(f.smart===false?"OFF":"ON");const k=new InlineKeyboard().text("💵 MARKET CAP","filter:edit:minMc").text("💧 LIQUIDITY","filter:edit:minLiquidity").row().text("📈 VOLUME","filter:edit:minVolume5m").text("👥 HOLDERS","filter:edit:minHolders").row().text("🐳 TOP HOLDERS","filter:edit:maxTop10").text("👨‍💻 DEV","filter:edit:maxDev").row().text("⏱️ TOKEN AGE","filter:edit:minAgeSec").text("🧠 SMART","filter:smart").row().text("✅ SAVE FILTERS","filter:save").row().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu");return show(ctx,text,{parse_mode:"Markdown",reply_markup:k});});
-bot.callbackQuery("filter:save",async ctx=>{await ctx.answerCallbackQuery();const u=await user(ctx.from.id,ctx.from.username);const f=u.filters||{};if(Number(f.minMc||0)<16000)return show(ctx,"⚠️ *FILTERS NOT SAVED*\\n\\nMinimum market cap cannot be below $16K.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("💵 MARKET CAP","filter:edit:minMc").text("⬅️ BACK","setup")});await patch(ctx.from.id,{filters:{...f,minMc:Math.max(16000,Number(f.minMc||16000)),smart:f.smart!==false}});return show(ctx,"✅ *FILTERS SAVED*\\n\\nOnly tokens passing the configured combination of market, quality and safety checks can generate a call.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔔 SET ALERTS","setup:alerts").text("🧾 REVIEW","review").row().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu")});});
+bot.callbackQuery(/^filter:(pre|new|both)$/,async ctx=>{await ctx.answerCallbackQuery();const u=await user(ctx.from!.id,ctx.from!.username);const type=ctx.match[1];const current=u.filters||{type:"both",minMc:16000,maxMc:null,minLiquidity:5000,minVolume5m:2000,minHolders:50,maxTop10:35,maxDev:5,minAgeSec:30,maxAgeMin:30,smart:true};const next={...current,type:type==="pre"?"pre":type==="new"?"new":"both"};await patch(ctx.from!.id,{filters:next});return show(ctx,"✅ *MARKET TYPE SAVED*\\n\\nMode: *"+next.type.toUpperCase()+"*\\n\\nMarket cap never qualifies below the hard $16K floor.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("⚙️ FILTER SETTINGS","filter:settings").text("🧠 SMART FILTERS","filter:smart").row().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu")});});
+bot.callbackQuery("filter:settings",async ctx=>{await ctx.answerCallbackQuery();const u=await user(ctx.from!.id,ctx.from!.username);const f=u.filters||{type:"both",minMc:16000,maxMc:50000,minLiquidity:5000,minVolume5m:2000,minHolders:50,maxTop10:35,maxDev:5,minAgeSec:30,maxAgeMin:30,smart:true};const text="🔎 *FILTER SETTINGS*\\n\\nMarket Cap\\nMinimum: $"+f.minMc+"\\nMaximum: "+(f.maxMc==null?"$∞":"$"+f.maxMc)+"\\n\\nLiquidity\\nMinimum: $"+f.minLiquidity+"\\n\\n5M Volume\\nMinimum: $"+f.minVolume5m+"\\n\\nToken Age\\n"+f.minAgeSec+" seconds → "+f.maxAgeMin+" minutes\\n\\nHolders\\nMinimum: "+f.minHolders+"\\n\\nTop 10 Holders\\nMaximum: "+f.maxTop10+"%\\n\\nDev Holding\\nMaximum: "+f.maxDev+"%\\n\\nSmart Filters: "+(f.smart===false?"OFF":"ON");const k=new InlineKeyboard().text("💵 MARKET CAP","filter:edit:minMc").text("💧 LIQUIDITY","filter:edit:minLiquidity").row().text("📈 VOLUME","filter:edit:minVolume5m").text("👥 HOLDERS","filter:edit:minHolders").row().text("🐳 TOP HOLDERS","filter:edit:maxTop10").text("👨‍💻 DEV","filter:edit:maxDev").row().text("⏱️ TOKEN AGE","filter:edit:minAgeSec").text("🧠 SMART","filter:smart").row().text("✅ SAVE FILTERS","filter:save").row().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu");return show(ctx,text,{parse_mode:"Markdown",reply_markup:k});});
+bot.callbackQuery("filter:save",async ctx=>{await ctx.answerCallbackQuery();const u=await user(ctx.from!.id,ctx.from!.username);const f=u.filters||{};if(Number(f.minMc||0)<16000)return show(ctx,"⚠️ *FILTERS NOT SAVED*\\n\\nMinimum market cap cannot be below $16K.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("💵 MARKET CAP","filter:edit:minMc").text("⬅️ BACK","setup")});await patch(ctx.from!.id,{filters:{...f,minMc:Math.max(16000,Number(f.minMc||16000)),smart:f.smart!==false}});return show(ctx,"✅ *FILTERS SAVED*\\n\\nOnly tokens passing the configured combination of market, quality and safety checks can generate a call.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔔 SET ALERTS","setup:alerts").text("🧾 REVIEW","review").row().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu")});});
 bot.callbackQuery(/^filter:edit:(minMc|maxMc|minLiquidity|minVolume5m|minHolders|maxTop10|maxDev|minAgeSec|maxAgeMin)$/,async ctx=>{
   await ctx.answerCallbackQuery();const field=ctx.match[1] as FilterField;ctx.session.input=("filter_"+field) as Session["input"];
   const labels:Record<FilterField,string>={minMc:"minimum market cap in USD",maxMc:"maximum market cap in USD",minLiquidity:"minimum liquidity in USD",minVolume5m:"minimum 5-minute volume in USD",minHolders:"minimum holder count",maxTop10:"maximum top-10 holder concentration percentage",maxDev:"maximum developer holding percentage",minAgeSec:"minimum token age in seconds",maxAgeMin:"maximum token age in minutes"};
   await show(ctx,"✏️ *EDIT FILTER*\\n\\nEnter the "+labels[field]+".\\nNumbers only. Other filter settings will be preserved.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("↩️ CANCEL","filter:settings").text("🏠 MAIN MENU","menu")});
 });
-bot.callbackQuery("filter:smart",async ctx=>{await ctx.answerCallbackQuery();const u=await user(ctx.from.id,ctx.from.username);const old=u.filters||{type:"both",minMc:16000,maxMc:null,minLiquidity:5000,minVolume5m:2000,minHolders:50,maxTop10:35,maxDev:5,minAgeSec:30,maxAgeMin:30};const next={...old,smart:old.smart===false};await patch(ctx.from.id,{filters:next});await show(ctx,"🧠 *SMART FILTERS "+(next.smart?"ON":"OFF")+"*\\n\\n"+(next.smart?"Smart checks are enabled in your saved configuration.":"Smart checks are disabled in your saved configuration.")+"\\n\\nLive token qualification remains unavailable until the filter evaluator is connected.",{parse_mode:"Markdown",reply_markup:filterKb()});});
+bot.callbackQuery("filter:smart",async ctx=>{await ctx.answerCallbackQuery();const u=await user(ctx.from!.id,ctx.from!.username);const old=u.filters||{type:"both",minMc:16000,maxMc:null,minLiquidity:5000,minVolume5m:2000,minHolders:50,maxTop10:35,maxDev:5,minAgeSec:30,maxAgeMin:30};const next={...old,smart:old.smart===false};await patch(ctx.from!.id,{filters:next});await show(ctx,"🧠 *SMART FILTERS "+(next.smart?"ON":"OFF")+"*\\n\\n"+(next.smart?"Smart checks are enabled in your saved configuration.":"Smart checks are disabled in your saved configuration.")+"\\n\\nLive token qualification remains unavailable until the filter evaluator is connected.",{parse_mode:"Markdown",reply_markup:filterKb()});});
 
-bot.callbackQuery(/^alert:(new|liq|vol|bond)$/,async ctx=>{await ctx.answerCallbackQuery();const u=await user(ctx.from.id,ctx.from.username);const old=u.alerts||{};const key=({new:"newToken",liq:"liquidity",vol:"volume",bond:"bonding"} as Record<string,string>)[ctx.match[1]];const next={...old,milestones:true,[key]:!old[key]};await patch(ctx.from.id,{alerts:next});const k=new InlineKeyboard().text((next.newToken?"☑":"☐")+" NEW TOKEN","alert:new").text((next.liquidity?"☑":"☐")+" LIQUIDITY","alert:liq").row().text((next.volume?"☑":"☐")+" VOLUME","alert:vol").text((next.bonding?"☑":"☐")+" BONDING","alert:bond").row().text("💾 SAVE","alert:save").row().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu");await show(ctx,"🔔 *OPTIONAL ALERTS*\n\nTrade milestones: ALWAYS ON\nTap an option to toggle it. Your selection is saved immediately.",{parse_mode:"Markdown",reply_markup:k});});
-bot.callbackQuery("alert:save",async ctx=>{await ctx.answerCallbackQuery();const old=(await user(ctx.from.id,ctx.from.username)).alerts||{};await patch(ctx.from.id,{alerts:{...old,milestones:true}});await show(ctx,"✅ *ALERTS SAVED*\n\nTrade lifecycle milestones are always on. Optional market alerts are saved.",{parse_mode:"Markdown",reply_markup:setupKb()});});
+bot.callbackQuery(/^alert:(new|liq|vol|bond)$/,async ctx=>{await ctx.answerCallbackQuery();const u=await user(ctx.from!.id,ctx.from!.username);const old=u.alerts||{};const key=({new:"newToken",liq:"liquidity",vol:"volume",bond:"bonding"} as Record<string,string>)[ctx.match[1]];const next={...old,milestones:true,[key]:!old[key]};await patch(ctx.from!.id,{alerts:next});const k=new InlineKeyboard().text((next.newToken?"☑":"☐")+" NEW TOKEN","alert:new").text((next.liquidity?"☑":"☐")+" LIQUIDITY","alert:liq").row().text((next.volume?"☑":"☐")+" VOLUME","alert:vol").text((next.bonding?"☑":"☐")+" BONDING","alert:bond").row().text("💾 SAVE","alert:save").row().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu");await show(ctx,"🔔 *OPTIONAL ALERTS*\n\nTrade milestones: ALWAYS ON\nTap an option to toggle it. Your selection is saved immediately.",{parse_mode:"Markdown",reply_markup:k});});
+bot.callbackQuery("alert:save",async ctx=>{await ctx.answerCallbackQuery();const old=(await user(ctx.from!.id,ctx.from!.username)).alerts||{};await patch(ctx.from!.id,{alerts:{...old,milestones:true}});await show(ctx,"✅ *ALERTS SAVED*\n\nTrade lifecycle milestones are always on. Optional market alerts are saved.",{parse_mode:"Markdown",reply_markup:setupKb()});});
 
-bot.callbackQuery("setup:alerts",async ctx=>{await ctx.answerCallbackQuery();const u=await user(ctx.from.id,ctx.from.username);return show(ctx,"🔔 *ALERT SETTINGS*\n\nTrade lifecycle milestones are mandatory and always on. Toggle optional market alerts below. Changes save immediately.",{parse_mode:"Markdown",reply_markup:alertKb(u.alerts||{})});});
-bot.callbackQuery("alerts",async ctx=>{await ctx.answerCallbackQuery();const u=await user(ctx.from.id,ctx.from.username);return show(ctx,"🔔 *ALERT SETTINGS*\n\nTrade lifecycle milestones are mandatory and always on. Toggle optional market alerts below. Changes save immediately.",{parse_mode:"Markdown",reply_markup:alertKb(u.alerts||{})});});
+bot.callbackQuery("setup:alerts",async ctx=>{await ctx.answerCallbackQuery();const u=await user(ctx.from!.id,ctx.from!.username);return show(ctx,"🔔 *ALERT SETTINGS*\n\nTrade lifecycle milestones are mandatory and always on. Toggle optional market alerts below. Changes save immediately.",{parse_mode:"Markdown",reply_markup:alertKb(u.alerts||{})});});
+bot.callbackQuery("alerts",async ctx=>{await ctx.answerCallbackQuery();const u=await user(ctx.from!.id,ctx.from!.username);return show(ctx,"🔔 *ALERT SETTINGS*\n\nTrade lifecycle milestones are mandatory and always on. Toggle optional market alerts below. Changes save immediately.",{parse_mode:"Markdown",reply_markup:alertKb(u.alerts||{})});});
 bot.callbackQuery("noop",async ctx=>ctx.answerCallbackQuery("Trade milestones are mandatory."));
 
 bot.callbackQuery("wallet",async ctx=>{
   await ctx.answerCallbackQuery();
   ctx.session.walletReturnTo="menu";
   ctx.session.input=undefined;
-  const result=await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[ctx.from.id]);
+  const result=await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[ctx.from!.id]);
   if(!result.rowCount) return show(ctx,"💰 *YOUR TRADING WALLET*\n\nNo wallet has been created or imported yet.\n\nChoose an option below.",{parse_mode:"Markdown",reply_markup:walletKb("menu")});
   return show(ctx,"💰 *YOUR TRADING WALLET*\n\nStatus: WALLET CREATED\nAddress: \x60"+result.rows[0].public_key+"\x60\n\nBalance: unavailable — live Solana RPC balance lookup is not connected yet.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔐 BACK UP WALLET","wallet:backup").row().text("🔄 REFRESH","wallet:refresh").row().text("↩️ RETURN TO MAIN MENU","menu")});
 });
-bot.callbackQuery("wallet:setup",async ctx=>{await ctx.answerCallbackQuery();ctx.session.walletReturnTo="setup";ctx.session.input=undefined;const result=await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[ctx.from.id]);if(!result.rowCount)return show(ctx,"💰 *WALLET*\n\nCreate or import your trading wallet. Live balance verification is not connected yet.",{parse_mode:"Markdown",reply_markup:walletKb("setup")});return show(ctx,"💰 *WALLET*\n\nAddress: `"+result.rows[0].public_key+"`\nBalance: unavailable — live RPC lookup is not connected.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔐 BACK UP","wallet:backup").row().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu")});});
+bot.callbackQuery("wallet:setup",async ctx=>{await ctx.answerCallbackQuery();ctx.session.walletReturnTo="setup";ctx.session.input=undefined;const result=await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[ctx.from!.id]);if(!result.rowCount)return show(ctx,"💰 *WALLET*\n\nCreate or import your trading wallet. Live balance verification is not connected yet.",{parse_mode:"Markdown",reply_markup:walletKb("setup")});return show(ctx,"💰 *WALLET*\n\nAddress: `"+result.rows[0].public_key+"`\nBalance: unavailable — live RPC lookup is not connected.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔐 BACK UP","wallet:backup").row().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu")});});
 bot.callbackQuery("wallet:create",async ctx=>{
   await ctx.answerCallbackQuery();
-  const existing=await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[ctx.from.id]);
+  const existing=await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[ctx.from!.id]);
   if(existing.rowCount) return show(ctx,"A wallet already exists. LaPrint will not replace it.",{reply_markup:new InlineKeyboard().text("🔐 BACK UP WALLET","wallet:backup").row().text("↩️ RETURN","wallet")});
   try {
-    const address=await saveWallet(ctx.from.id,Keypair.generate());
-    await recordAdminEvent(pool,"wallet_created",{telegram_id:ctx.from.id,wallet_address:address},"ACTION");
+    const address=await saveWallet(ctx.from!.id,Keypair.generate());
+    await recordAdminEvent(pool,"wallet_created",{telegram_id:ctx.from!.id,wallet_address:address},"ACTION");
     return show(ctx,"✅ *WALLET CREATED*\n\nYour Solana wallet was generated and encrypted before storage.\n\nAddress:\n\x60"+address+"\x60\n\nUse the backup action only in a private setting. Never share your private key.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔐 BACK UP WALLET","wallet:backup").row().text("📋 COPY ADDRESS","wallet:copy").row().text("↩️ RETURN TO WALLET","wallet")});
   } catch(error) {
     console.error("[wallet] create failed",error);
@@ -385,7 +386,7 @@ bot.callbackQuery("wallet:create",async ctx=>{
 });
 bot.callbackQuery("wallet:import",async ctx=>{
   await ctx.answerCallbackQuery();
-  const existing=await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[ctx.from.id]);
+  const existing=await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[ctx.from!.id]);
   if(existing.rowCount) return show(ctx,"A wallet already exists. Import will not overwrite it.",{reply_markup:new InlineKeyboard().text("🔐 BACK UP WALLET","wallet:backup").row().text("↩️ RETURN","wallet")});
   ctx.session.input="wallet_import";
   return show(ctx,"📥 *IMPORT SOLANA WALLET*\n\nSend your private key as a Base58 string or JSON secret-key array. Recovery phrases are not supported in this import screen.\n\nYour message will be deleted immediately where Telegram permits. Sending a key through Telegram still means Telegram processes that message; only continue if you accept that risk.\n\n↩️ Return to cancel.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("↩️ CANCEL / RETURN","wallet")});
@@ -393,7 +394,7 @@ bot.callbackQuery("wallet:import",async ctx=>{
 bot.callbackQuery("wallet:backup",async ctx=>{
   await ctx.answerCallbackQuery();
   try {
-    const secret=await walletBackup(ctx.from.id);
+    const secret=await walletBackup(ctx.from!.id);
     return show(ctx,"🔐 *PRIVATE WALLET BACKUP*\n\nBase58 private key:\n\n\x60"+secret+"\x60\n\nAnyone with this key can control your funds. Store it securely, then delete this message. LaPrint support will never ask for it.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("↩️ RETURN TO WALLET","wallet")});
   } catch(error) {
     console.error("[wallet] backup failed",error);
@@ -402,17 +403,17 @@ bot.callbackQuery("wallet:backup",async ctx=>{
 });
 bot.callbackQuery("wallet:copy",async ctx=>{
   await ctx.answerCallbackQuery();
-  const result=await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[ctx.from.id]);
+  const result=await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[ctx.from!.id]);
   if(!result.rowCount) return show(ctx,"No wallet was found.",{reply_markup:walletKb(ctx.session.walletReturnTo==="setup"?"setup":"menu")});
   return show(ctx,"📋 Wallet address:\n\x60"+result.rows[0].public_key+"\x60",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("↩️ RETURN","wallet")});
 });
 bot.callbackQuery("wallet:refresh",async ctx=>{
   await ctx.answerCallbackQuery("Checking Solana balance…");
-  const result=await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[ctx.from.id]);
+  const result=await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[ctx.from!.id]);
   if(!result.rowCount) return show(ctx,"No wallet has been created or imported yet.",{reply_markup:walletKb(ctx.session.walletReturnTo==="setup"?"setup":"menu")});
   try{
     const balance=await readSolBalance(result.rows[0].public_key);
-    await patch(ctx.from.id,{wallet_balance:balance});
+    await patch(ctx.from!.id,{wallet_balance:balance});
     const target=ctx.session.walletReturnTo==="setup"?"setup":"menu";
     return show(ctx,"💰 *YOUR TRADING WALLET*\\n\\nStatus: "+(balance>0?"FUNDED":"CREATED — NO SOL")+"\\nAddress: \\x60"+result.rows[0].public_key+"\\x60\\nBalance: *"+balance.toFixed(6)+" SOL*\\n\\nBalance checked from Solana RPC.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔐 BACK UP WALLET","wallet:backup").row().text("🔄 REFRESH","wallet:refresh").row().text("⬅️ BACK",target).text("🏠 MAIN MENU","menu")});
   }catch(error){
@@ -421,8 +422,8 @@ bot.callbackQuery("wallet:refresh",async ctx=>{
   }
 });
 async function readiness(ctx:Ctx){
-  const u=await user(ctx.from.id,ctx.from.username);
-  const wallet=await pool.query("SELECT id,name,public_key,is_active FROM public.trading_wallets WHERE telegram_id=$1 AND is_active=TRUE LIMIT 1",[ctx.from.id]);
+  const u=await user(ctx.from!.id,ctx.from!.username);
+  const wallet=await pool.query("SELECT id,name,public_key,is_active FROM public.trading_wallets WHERE telegram_id=$1 AND is_active=TRUE LIMIT 1",[ctx.from!.id]);
   const missing:string[]=[];
   if(u.buy_amount==null)missing.push("Buy amount");
   if(u.tp_config==null)missing.push("Take profit");
@@ -432,7 +433,7 @@ async function readiness(ctx:Ctx){
   if(!wallet.rowCount)missing.push("Wallet");
   let balance=0;
   if(wallet.rowCount){
-    try{balance=await readSolBalance(wallet.rows[0].public_key);await patch(ctx.from.id,{wallet_balance:balance,...(balance>0?{funding_prompt_sent:false}:{})});}
+    try{balance=await readSolBalance(wallet.rows[0].public_key);await patch(ctx.from!.id,{wallet_balance:balance,...(balance>0?{funding_prompt_sent:false}:{})});}
     catch{missing.push("Verified wallet balance");}
   }
   if(wallet.rowCount && balance<=0 && !missing.includes("Verified wallet balance"))missing.push("Funded wallet");
@@ -445,9 +446,9 @@ async function readiness(ctx:Ctx){
       discovery:{...(base.discovery||{}),marketCapMin:Math.max(16000,Number(f.minMc||16000)),marketCapMax:f.maxMc==null?null:Number(f.maxMc),liquidityMin:Number(f.minLiquidity||5000),volume5mMin:Number(f.minVolume5m||2000),tokenAgeMinSec:Number(f.minAgeSec||30),tokenAgeMaxSec:f.maxAgeMin==null?1800:Number(f.maxAgeMin)*60,holderMin:Number(f.minHolders||50),top10Max:Number(f.maxTop10??35),devMax:Number(f.maxDev??5),marketTypes,smartFilters:f.smart!==false,strictData:f.strictData!==false},
       execution:{...(base.execution||{}),buyAmountSol:Number(u.buy_amount),maxBuyAmountSol:Number(u.buy_amount),takeProfit:u.tp_config?.targets||[],stopLossPct:Number(u.sl_percent),trailing:base.execution?.trailing||{enabled:false,activationPct:30,pullbackPct:15},maxOpenPositions:base.execution?.maxOpenPositions||3,dailySpendingLimitSol:base.execution?.dailySpendingLimitSol??null}
     };
-    await patch(ctx.from.id,{strategy_config:cfg,strategy_profile:cfg.profile,strategy_version:cfg.version});
+    await patch(ctx.from!.id,{strategy_config:cfg,strategy_profile:cfg.profile,strategy_version:cfg.version});
   }
-  return {u:await user(ctx.from.id,ctx.from.username),wallet:wallet.rows[0]||null,balance,missing};
+  return {u:await user(ctx.from!.id,ctx.from!.username),wallet:wallet.rows[0]||null,balance,missing};
 }
 bot.callbackQuery("review",async ctx=>{
   await ctx.answerCallbackQuery("Reviewing setup…");
@@ -469,10 +470,10 @@ bot.callbackQuery("activate",async ctx=>{
   await ctx.answerCallbackQuery("Checking setup…");
   const r=await readiness(ctx);
   if(r.missing.length)return show(ctx,"⚠️ *TRADING NOT READY*\\n\\n"+r.missing.map(x=>"❌ "+x).join("\\n"),{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("⚙️ TRADE SETUP","setup").text("💰 WALLET","wallets").row().text("🏠 MAIN MENU","menu")});
-  await patch(ctx.from.id,{onboarding_complete:true,trading_active:true});
-  await recordAdminEvent(pool,"trading_started",{telegram_id:ctx.from.id,wallet_address:r.wallet.public_key,mode:r.u.mode||"autopilot"},"ACTION");
+  await patch(ctx.from!.id,{onboarding_complete:true,trading_active:true});
+  await recordAdminEvent(pool,"trading_started",{telegram_id:ctx.from!.id,wallet_address:r.wallet.public_key,mode:r.u.mode||"autopilot"},"ACTION");
   if(r.balance<=0){
-    await patch(ctx.from.id,{trading_active:false});
+    await patch(ctx.from!.id,{trading_active:false});
     return show(ctx,"💰 *FUND YOUR WALLET*\\n\\nYour wallet currently has 0 SOL.\\n\\nFund your wallet to enable trading and receive qualified trading calls.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("💰 FUND WALLET","mw:deposit:"+r.wallet.id).text("🔄 REFRESH","wallets:refresh").row().text("🏠 MAIN MENU","menu")});
   }
   const executionReady=process.env.ENGINE_MODE==="enabled" && process.env.LIVE_TRADING==="true" && process.env.LIVE_TRADING_ACK==="I_ACCEPT_REAL_SOLANA_TRANSACTIONS";
@@ -484,40 +485,40 @@ bot.callbackQuery("trade:start",async ctx=>{
   await ctx.answerCallbackQuery("Checking setup…");
   const r=await readiness(ctx);
   if(r.missing.length){
-    await patch(ctx.from.id,{trading_active:false});
+    await patch(ctx.from!.id,{trading_active:false});
     if(r.missing.includes("Funded wallet") && r.wallet && !r.u.funding_prompt_sent){
-      if(await once(ctx.from.id,"funding_prompt")){
-        await patch(ctx.from.id,{funding_prompt_sent:true});
-        await ctx.api.sendMessage(ctx.from.id,"💰 *FUND YOUR WALLET*\\n\\nYour wallet currently has 0 SOL.\\n\\nFund your wallet to enable trading and receive qualified trading calls.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("💰 FUND WALLET","mw:deposit:"+r.wallet.id).text("🔄 REFRESH","wallets:refresh").row().text("🏠 MAIN MENU","menu")});
+      if(await once(ctx.from!.id,"funding_prompt")){
+        await patch(ctx.from!.id,{funding_prompt_sent:true});
+        await ctx.api.sendMessage(ctx.from!.id,"💰 *FUND YOUR WALLET*\\n\\nYour wallet currently has 0 SOL.\\n\\nFund your wallet to enable trading and receive qualified trading calls.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("💰 FUND WALLET","mw:deposit:"+r.wallet.id).text("🔄 REFRESH","wallets:refresh").row().text("🏠 MAIN MENU","menu")});
       }
     }
     return show(ctx,"⚠️ *TRADING NOT READY*\\n\\n"+r.missing.map(x=>"❌ "+x).join("\\n")+"\\n\\nComplete the missing items, then try Start again.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("⚙️ TRADE SETUP","setup").text("💰 WALLET","wallets").row().text("🏠 MAIN MENU","menu")});
   }
-  await patch(ctx.from.id,{onboarding_complete:true,trading_active:true});
-  await recordAdminEvent(pool,"trading_started",{telegram_id:ctx.from.id,wallet_address:r.wallet.public_key,mode:r.u.mode||"autopilot"},"ACTION");
+  await patch(ctx.from!.id,{onboarding_complete:true,trading_active:true});
+  await recordAdminEvent(pool,"trading_started",{telegram_id:ctx.from!.id,wallet_address:r.wallet.public_key,mode:r.u.mode||"autopilot"},"ACTION");
   const executionReady=process.env.ENGINE_MODE==="enabled" && process.env.LIVE_TRADING==="true" && process.env.LIVE_TRADING_ACK==="I_ACCEPT_REAL_SOLANA_TRANSACTIONS";
   return show(ctx,(r.u.mode==="manual"?"✋":"🎯")+" *"+(r.u.mode==="manual"?"MANUAL FEED":"AUTOPILOT")+" "+(executionReady?"ACTIVE":"ARMED")+"*\\n\\n"+(executionReady?"The configured qualification rules are active.":"The configuration is active, but live execution remains gated. No trade has been opened.")+"\\n\\nOnly qualified tokens can reach Telegram.",{parse_mode:"Markdown",reply_markup:mainKb(true,r.u.mode||"autopilot")});
 });
 
 bot.callbackQuery("trade:stop",async ctx=>{
   await ctx.answerCallbackQuery();
-  return show(ctx,"⏹️ *"+(ctx.session?.input==="manual"?"STOP FEED?":"STOP AUTOPILOT?")+"*\\n\\nStopping prevents new entries. Existing positions remain active and continue their configured management rules.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("⏹️ YES, STOP","trade:stop:confirm").text("↩️ KEEP RUNNING","menu")});
+  return show(ctx,"⏹️ *"+(((await user(ctx.from!.id,ctx.from!.username)).mode==="manual")?"STOP FEED?":"STOP AUTOPILOT?")+"*\\n\\nStopping prevents new entries. Existing positions remain active and continue their configured management rules.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("⏹️ YES, STOP","trade:stop:confirm").text("↩️ KEEP RUNNING","menu")});
 });
 bot.callbackQuery("trade:stop:confirm",async ctx=>{
   await ctx.answerCallbackQuery("Stopped");
-  const u=await user(ctx.from.id,ctx.from.username);
-  await patch(ctx.from.id,{trading_active:false});
-  await recordAdminEvent(pool,"trading_stopped",{telegram_id:ctx.from.id,mode:u.mode||"autopilot"},"ACTION");
-  await notifyAdmin(bot,"trading_stopped",{telegram_id:ctx.from.id});
+  const u=await user(ctx.from!.id,ctx.from!.username);
+  await patch(ctx.from!.id,{trading_active:false});
+  await recordAdminEvent(pool,"trading_stopped",{telegram_id:ctx.from!.id,mode:u.mode||"autopilot"},"ACTION");
+  await notifyAdmin(bot,"trading_stopped",{telegram_id:ctx.from!.id});
   return show(ctx,"⏹️ *"+(u.mode==="manual"?"MANUAL FEED STOPPED":"AUTOPILOT STOPPED")+"*\\n\\nNo new entries will be opened. Existing positions are not automatically closed.",{parse_mode:"Markdown",reply_markup:mainKb(false,u.mode||"autopilot")});
 });
 
-bot.callbackQuery(/^alert:watch$/,async ctx=>{await ctx.answerCallbackQuery();const u=await user(ctx.from.id,ctx.from.username);const old=u.alerts||{};const next={...old,milestones:true,watchlist:!old.watchlist};await patch(ctx.from.id,{alerts:next});return show(ctx,"🔔 *OPTIONAL ALERTS*\\n\\nWatchlist activity: "+(next.watchlist?"ON":"OFF")+"\\n\\nTrade lifecycle milestones remain ALWAYS ON.",{parse_mode:"Markdown",reply_markup:alertKb(next)});});
+bot.callbackQuery(/^alert:watch$/,async ctx=>{await ctx.answerCallbackQuery();const u=await user(ctx.from!.id,ctx.from!.username);const old=u.alerts||{};const next={...old,milestones:true,watchlist:!old.watchlist};await patch(ctx.from!.id,{alerts:next});return show(ctx,"🔔 *OPTIONAL ALERTS*\\n\\nWatchlist activity: "+(next.watchlist?"ON":"OFF")+"\\n\\nTrade lifecycle milestones remain ALWAYS ON.",{parse_mode:"Markdown",reply_markup:alertKb(next)});});
 bot.callbackQuery(/^call:details:([1-9A-HJ-NP-Za-km-z]{32,44})$/,async ctx=>{
   await ctx.answerCallbackQuery();
-  const row=await getScannerToken(pool,ctx.from.id,ctx.match[1]);
+  const row=await getScannerToken(pool,ctx.from!.id,ctx.match[1]);
   if(!row)return show(ctx,"⚠️ *CALL EXPIRED*\\n\\nThis qualified call is no longer available.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("📡 ACTIVITY","activity").text("🏠 MAIN MENU","menu")});
-  const m=scannerMarketData(row),u=await user(ctx.from.id,ctx.from.username);
+  const m=scannerMarketData(row),u=await user(ctx.from!.id,ctx.from!.username);
   const text="📊 *CALL DETAILS*\\n\\n"+(row.symbol||"UNKNOWN")+"\\n\\nCA:\\n`"+row.address+"`\\n\\n💵 MC: "+scannerMoney(m.marketCap)+"\\n💧 Liquidity: "+scannerMoney(m.liquidity)+"\\n📈 5M Volume: "+scannerMoney(m.volume5m)+"\\n👥 Holders: "+scannerNum(m.holders)+"\\n🐳 Top 10: "+(m.top10==null?"—":m.top10+"%")+"\\n👨‍💻 Dev: "+(m.dev==null?"—":m.dev+"%")+"\\n\\nQualification: 🟢 PASSED";
   const k=new InlineKeyboard().text("📋 COPY CA","call:copy:"+row.address);
   if(u.mode==="manual")k.row().text("✅ APPROVE","call:approve:"+row.address).text("❌ REJECT","call:reject:"+row.address);
@@ -525,16 +526,16 @@ bot.callbackQuery(/^call:details:([1-9A-HJ-NP-Za-km-z]{32,44})$/,async ctx=>{
   return show(ctx,text,{parse_mode:"Markdown",reply_markup:k});
 });
 bot.callbackQuery(/^call:copy:([1-9A-HJ-NP-Za-km-z]{32,44})$/,async ctx=>{await ctx.answerCallbackQuery("CA ready");return show(ctx,"📋 *TOKEN CA*\\n\\n`"+ctx.match[1]+"`\\n\\nCopy the address above.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("⬅️ BACK","menu").text("🏠 MAIN MENU","menu")});});
-bot.callbackQuery(/^call:reject:([1-9A-HJ-NP-Za-km-z]{32,44})$/,async ctx=>{await ctx.answerCallbackQuery("Rejected");const u=await user(ctx.from.id,ctx.from.username);if(u.mode!=="manual")return show(ctx,"⚠️ Reject is available only in Manual mode.",{reply_markup:new InlineKeyboard().text("🏠 MAIN MENU","menu")});await pool.query("INSERT INTO public.engine_events(telegram_id,event_type,token_address,details) VALUES($1,$2,$3,$4)",[ctx.from.id,"call_rejected",ctx.match[1],{mode:"manual"}]);return show(ctx,"❌ *CALL REJECTED*\\n\\n`"+ctx.match[1]+"`\\n\\nNo trade was opened. The call has been recorded in Activity.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("📡 NEXT CALL","menu").text("📜 ACTIVITY","activity").row().text("🏠 MAIN MENU","menu")});});
+bot.callbackQuery(/^call:reject:([1-9A-HJ-NP-Za-km-z]{32,44})$/,async ctx=>{await ctx.answerCallbackQuery("Rejected");const u=await user(ctx.from!.id,ctx.from!.username);if(u.mode!=="manual")return show(ctx,"⚠️ Reject is available only in Manual mode.",{reply_markup:new InlineKeyboard().text("🏠 MAIN MENU","menu")});await pool.query("INSERT INTO public.engine_events(telegram_id,event_type,token_address,details) VALUES($1,$2,$3,$4)",[ctx.from!.id,"call_rejected",ctx.match[1],{mode:"manual"}]);return show(ctx,"❌ *CALL REJECTED*\\n\\n`"+ctx.match[1]+"`\\n\\nNo trade was opened. The call has been recorded in Activity.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("📡 NEXT CALL","menu").text("📜 ACTIVITY","activity").row().text("🏠 MAIN MENU","menu")});});
 bot.callbackQuery(/^call:approve:([1-9A-HJ-NP-Za-km-z]{32,44})$/,async ctx=>{
   await ctx.answerCallbackQuery("Checking execution…");
-  const u=await user(ctx.from.id,ctx.from.username);
+  const u=await user(ctx.from!.id,ctx.from!.username);
   if(u.mode!=="manual")return show(ctx,"⚠️ Approve is available only in Manual mode.",{reply_markup:new InlineKeyboard().text("🏠 MAIN MENU","menu")});
   const r=await readiness(ctx);
   if(r.missing.length)return show(ctx,"⚠️ *TRADE NOT EXECUTED*\\n\\n"+r.missing.map(x=>"❌ "+x).join("\\n")+"\\n\\nNo position was opened.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("⚙️ TRADE SETUP","setup").text("💰 WALLET","wallets").row().text("🏠 MAIN MENU","menu")});
   const live=process.env.ENGINE_MODE==="enabled"&&process.env.LIVE_TRADING==="true"&&process.env.LIVE_TRADING_ACK==="I_ACCEPT_REAL_SOLANA_TRANSACTIONS";
   if(!live)return show(ctx,"⚠️ *TRADE NOT EXECUTED*\\n\\nExecution is not enabled.\\n\\nNo position was opened.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("📊 VIEW DETAILS","call:details:"+ctx.match[1]).row().text("🏠 MAIN MENU","menu")});
-  try{const amount=Math.floor(Number(u.buy_amount)*LAMPORTS_PER_SOL);const result=await executeJupiterSwap({pool,telegramId:ctx.from.id,inputMint:"So11111111111111111111111111111111111111112",outputMint:ctx.match[1],amountAtomic:String(amount),side:"buy"});await pool.query("INSERT INTO public.engine_events(telegram_id,event_type,token_address,details) VALUES($1,$2,$3,$4)",[ctx.from.id,"entry_executed",ctx.match[1],{signature:result.signature,inputAmount:result.inputAmount,outputAmount:result.outputAmount}]);return show(ctx,"🟢 *TRADE EXECUTED*\\n\\n`"+ctx.match[1]+"`\\n\\nEntry confirmed on-chain.\\nBuy: "+u.buy_amount+" SOL.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("📡 ACTIVITY","activity").text("🏠 MAIN MENU","menu")});}catch(error){const reason=String((error as any)?.message||error).slice(0,300);await pool.query("INSERT INTO public.engine_events(telegram_id,event_type,token_address,details) VALUES($1,$2,$3,$4)",[ctx.from.id,"execution_failed",ctx.match[1],{reason}]);return show(ctx,"⚠️ *TRADE NOT EXECUTED*\\n\\nReason:\\n"+reason+"\\n\\nNo position was opened.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔄 TRY AGAIN","call:approve:"+ctx.match[1]).text("🏠 MAIN MENU","menu")});}
+  try{const amount=Math.floor(Number(u.buy_amount)*LAMPORTS_PER_SOL);const result=await executeJupiterSwap({pool,telegramId:ctx.from!.id,inputMint:"So11111111111111111111111111111111111111112",outputMint:ctx.match[1],amountAtomic:String(amount),side:"buy"});await pool.query("INSERT INTO public.engine_events(telegram_id,event_type,token_address,details) VALUES($1,$2,$3,$4)",[ctx.from!.id,"entry_executed",ctx.match[1],{signature:result.signature,inputAmount:result.inputAmount,outputAmount:result.outputAmount}]);return show(ctx,"🟢 *TRADE EXECUTED*\\n\\n`"+ctx.match[1]+"`\\n\\nEntry confirmed on-chain.\\nBuy: "+u.buy_amount+" SOL.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("📡 ACTIVITY","activity").text("🏠 MAIN MENU","menu")});}catch(error){const reason=String((error as any)?.message||error).slice(0,300);await pool.query("INSERT INTO public.engine_events(telegram_id,event_type,token_address,details) VALUES($1,$2,$3,$4)",[ctx.from!.id,"execution_failed",ctx.match[1],{reason}]);return show(ctx,"⚠️ *TRADE NOT EXECUTED*\\n\\nReason:\\n"+reason+"\\n\\nNo position was opened.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔄 TRY AGAIN","call:approve:"+ctx.match[1]).text("🏠 MAIN MENU","menu")});}
 });
 bot.callbackQuery("positions",async ctx=>{await ctx.answerCallbackQuery();await show(ctx,"📊 *POSITIONS*\n\nNo live position adapter is connected. No fake positions are shown.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔄 REFRESH","positions").text("🏠 MAIN MENU","menu")});});
 bot.callbackQuery("activity",async ctx=>{await ctx.answerCallbackQuery();await show(ctx,"📡 *ACTIVITY*\n\nNo live execution events are connected yet.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔄 REFRESH","activity").text("🏠 MAIN MENU","menu")});});
@@ -573,7 +574,7 @@ bot.callbackQuery(/^scanner:(qualified|rejected):0$/,async ctx=>{await ctx.answe
 bot.callbackQuery(/^scanner:page:(all|qualified|rejected):(\\d+)$/,async ctx=>{await ctx.answerCallbackQuery();return renderScanner(ctx,ctx.match[1] as "all"|"qualified"|"rejected",Number(ctx.match[2]));});
 bot.callbackQuery(/^scanner:token:([1-9A-HJ-NP-Za-km-z]{32,44})$/,async ctx=>{
   await ctx.answerCallbackQuery();
-  const row=await getScannerToken(pool,ctx.from.id,ctx.match[1]);
+  const row=await getScannerToken(pool,ctx.from!.id,ctx.match[1]);
   if(!row)return show(ctx,"🔎 TOKEN\n\nThis candidate is no longer in your scanner results.",{reply_markup:new InlineKeyboard().text("⬅️ DISCOVER","discover").text("🏠 MAIN MENU","menu")});
   const m=scannerMarketData(row);
   const text="🔎 "+(row.symbol||"UNKNOWN")+"\n\n"+(row.name||"Unknown token")+"\n\n"+
@@ -592,8 +593,8 @@ bot.on("message:text",async ctx=>{
     try{
       const bytes=raw.startsWith("[")?Uint8Array.from(JSON.parse(raw)):bs58.decode(raw);
       const keypair=Keypair.fromSecretKey(bytes);
-      const address=await saveWallet(ctx.from.id,keypair);
-      await recordAdminEvent(pool,"wallet_imported",{telegram_id:ctx.from.id,wallet_address:address},"ACTION");
+      const address=await saveWallet(ctx.from!.id,keypair);
+      await recordAdminEvent(pool,"wallet_imported",{telegram_id:ctx.from!.id,wallet_address:address},"ACTION");
       return show(ctx,"✅ *WALLET IMPORTED*\n\nYour Solana private key was validated and encrypted before storage.\n\nAddress:\n\x60"+address+"\x60\n\nYour submitted message was deleted where Telegram permitted it.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔐 BACK UP WALLET","wallet:backup").row().text("↩️ RETURN TO WALLET","wallet")});
     }catch(error){
       console.error("[wallet] import failed",error);
@@ -602,24 +603,24 @@ bot.on("message:text",async ctx=>{
   }
   if(ctx.session.input==="buy"){
     const v=Number(raw);if(!Number.isFinite(v)||v<=0)return show(ctx,"⚠️ Enter a valid positive SOL amount.");
-    await patch(ctx.from.id,{buy_amount:v});ctx.session.input=undefined;return show(ctx,"✅ BUY AMOUNT SAVED\n\nTrade size: "+v+" SOL",{reply_markup:setupKb()});
+    await patch(ctx.from!.id,{buy_amount:v});ctx.session.input=undefined;return show(ctx,"✅ BUY AMOUNT SAVED\n\nTrade size: "+v+" SOL",{reply_markup:setupKb()});
   }
   if(ctx.session.input==="sl"){
     const v=Number(raw);if(!Number.isFinite(v)||v>=0||v<-100)return show(ctx,"⚠️ Enter a stop loss between -1 and -100.");
-    await patch(ctx.from.id,{sl_percent:v});ctx.session.input=undefined;return show(ctx,"✅ STOP LOSS SAVED\n\nSL: "+v+"%",{reply_markup:setupKb()});
+    await patch(ctx.from!.id,{sl_percent:v});ctx.session.input=undefined;return show(ctx,"✅ STOP LOSS SAVED\n\nSL: "+v+"%",{reply_markup:setupKb()});
   }
   if(ctx.session.input?.startsWith("filter_")){
     const field=ctx.session.input.slice(7) as FilterField;const value=Number(raw);
     const valid=Number.isFinite(value)&&value>=0&&((field!=="maxTop10"&&field!=="maxDev")||value<=100)&&((field!=="minHolders"&&field!=="minAgeSec"&&field!=="maxAgeMin")||Number.isInteger(value));
     if(!valid)return show(ctx,"⚠️ Enter a valid non-negative number. Percentages must be 0–100; holder count and age values must be whole numbers.");
-    const u=await user(ctx.from.id,ctx.from.username);const current=u.filters||{type:"both",minMc:3000,maxMc:50000,minLiquidity:5000,minVolume5m:2000,minHolders:50,maxTop10:35,maxDev:5,minAgeSec:30,maxAgeMin:30,smart:true};
+    const u=await user(ctx.from!.id,ctx.from!.username);const current=u.filters||{type:"both",minMc:3000,maxMc:50000,minLiquidity:5000,minVolume5m:2000,minHolders:50,maxTop10:35,maxDev:5,minAgeSec:30,maxAgeMin:30,smart:true};
     const next={...current,[field]:value};if(next.minMc>next.maxMc)return show(ctx,"⚠️ Minimum market cap cannot exceed maximum market cap.");
-    await patch(ctx.from.id,{filters:next});ctx.session.input=undefined;
+    await patch(ctx.from!.id,{filters:next});ctx.session.input=undefined;
     return show(ctx,"✅ FILTER SAVED\\n\\n"+field+": "+value+"\\n\\nYour other filter settings were preserved.",{reply_markup:filterKb()});
   }
   if(ctx.session.input==="tp"){
     const v=Number(raw);if(!Number.isFinite(v)||v<=0||v>1000)return show(ctx,"⚠️ Enter a positive take-profit target between 1% and 1000%.");
-    await patch(ctx.from.id,{tp_config:{type:"simple",targets:[{pct:v,sellPct:100}]}});ctx.session.input=undefined;return show(ctx,"✅ TAKE PROFIT SAVED\n\n+"+v+"% → sell 100%",{reply_markup:setupKb()});
+    await patch(ctx.from!.id,{tp_config:{type:"simple",targets:[{pct:v,sellPct:100}]}});ctx.session.input=undefined;return show(ctx,"✅ TAKE PROFIT SAVED\n\n+"+v+"% → sell 100%",{reply_markup:setupKb()});
   }
 });
 registerAdminConsole({ bot, pool, show });
