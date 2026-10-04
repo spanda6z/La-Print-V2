@@ -64,6 +64,7 @@ export async function ensureEngineSchema(pool:Pool) {
     );
     CREATE INDEX IF NOT EXISTS engine_positions_open_idx ON public.engine_positions(telegram_id,status);
     CREATE UNIQUE INDEX IF NOT EXISTS engine_positions_entry_sig_uidx ON public.engine_positions(entry_signature) WHERE entry_signature IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS engine_positions_open_wallet_token_uidx ON public.engine_positions(wallet_id,token_address) WHERE status='open';
   `);
 }
 
@@ -260,11 +261,112 @@ async function scanOnce(pool:Pool, bot?:BotLike) {
   }
   console.log("[scanner] scan complete",JSON.stringify({discovered:listings.length,inspected,qualified,evaluated,source:"pump.fun-native"}));
 }
-async function monitorPositions(pool:Pool) {
-  // Position monitoring deliberately does not fabricate marks or execute exits until token-account
-  // balance reconciliation and a sell-transaction path are enabled.
-  const open=await pool.query("SELECT COUNT(*)::int AS n FROM public.engine_positions WHERE status='open'");
-  if(Number(open.rows[0]?.n||0)>0) console.log("[engine] open positions awaiting verified sell adapter",open.rows[0].n);
+async function tokenBalance(pool:Pool,telegramId:number,token:string) {
+  const wallet=await getActiveTradingWallet(pool,telegramId);
+  if(!wallet) throw new Error("No active trading wallet.");
+  const connection=new Connection(process.env.SOLANA_RPC_URL!,"confirmed");
+  const accounts=await connection.getParsedTokenAccountsByOwner(wallet.keypair.publicKey,{mint:new PublicKey(token)},"confirmed");
+  let raw=0n,decimals=0;
+  for(const a of accounts.value){
+    const ui=a.account.data.parsed.info.tokenAmount;
+    decimals=Number(ui.decimals||0);
+    raw+=BigInt(ui.amount||"0");
+  }
+  return {wallet,raw,decimals};
+}
+
+async function openVerifiedPosition(pool:Pool,telegramId:number,token:string,symbol:string,buyAmountSol:number,result:SwapResult,strategy:Strategy) {
+  const wallet=await getActiveTradingWallet(pool,telegramId);
+  if(!wallet) throw new Error("No active trading wallet.");
+  const amount=BigInt(result.outputAmount);
+  if(amount<=0n) throw new Error("Buy confirmed but token output was zero.");
+  const existing=await pool.query("SELECT id FROM public.engine_positions WHERE telegram_id=$1 AND wallet_id=$2 AND token_address=$3 AND status='open' LIMIT 1",[telegramId,wallet.id,token]);
+  if(existing.rowCount) return existing.rows[0].id;
+  const solSpent=Number(result.inputAmount)/LAMPORTS_PER_SOL;
+  const entryPrice=solSpent/Number(amount);
+  const inserted=await pool.query(
+    "INSERT INTO public.engine_positions(telegram_id,wallet_id,wallet_address,token_address,symbol,entry_signature,entry_price,token_amount,remaining_amount,sol_spent,high_water_price,status,exit_config) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$8,$9,$7,'open',$10) RETURNING id",
+    [telegramId,wallet.id,wallet.publicKey,token,symbol,result.signature,entryPrice,amount.toString(),solSpent,{takeProfit:strategy.execution?.takeProfit||[],stopLossPct:strategy.execution?.stopLossPct??-20,trailing:strategy.execution?.trailing||{enabled:false}}]
+  );
+  await saveEvent(pool,telegramId,"entry_executed",token,{signature:result.signature,inputAmount:result.inputAmount,outputAmount:result.outputAmount,positionId:inserted.rows[0].id});
+  return inserted.rows[0].id;
+}
+
+async function executePositionExit(pool:Pool,position:any,rawAmount:bigint,reason:string) {
+  if(rawAmount<=0n) return null;
+  const result=await executeJupiterSwap({pool,telegramId:Number(position.telegram_id),inputMint:position.token_address,outputMint:SOL,amountAtomic:rawAmount.toString(),side:"sell"});
+  const proceeds=Number(result.outputAmount)/LAMPORTS_PER_SOL;
+  const previousRemaining=Number(position.remaining_amount);
+  const fraction=previousRemaining>0?Number(rawAmount)/previousRemaining:1;
+  const cost=Number(position.sol_spent)*Math.min(1,Math.max(0,fraction));
+  const pnl=proceeds-cost;
+  const left=previousRemaining-Number(rawAmount);
+  if(left<=0.000000001){
+    await pool.query("UPDATE public.engine_positions SET remaining_amount=0,realized_pnl_sol=realized_pnl_sol+$2,status='closed',closed_at=NOW() WHERE id=$1",[position.id,pnl]);
+    await saveEvent(pool,Number(position.telegram_id),"position_closed",position.token_address,{signature:result.signature,reason,proceedsSol:proceeds,pnlSol:pnl});
+  }else{
+    await pool.query("UPDATE public.engine_positions SET remaining_amount=$2,realized_pnl_sol=realized_pnl_sol+$3 WHERE id=$1",[position.id,left,pnl]);
+    await saveEvent(pool,Number(position.telegram_id),"tp_executed",position.token_address,{signature:result.signature,reason,proceedsSol:proceeds,pnlSol:pnl,remainingAmount:left});
+  }
+  return {result,pnl};
+}
+
+async function positionMark(pool:Pool,position:any) {
+  const rpc=process.env.SOLANA_RPC_URL;
+  const apiKey=process.env.JUPITER_API_KEY;
+  if(!rpc||!apiKey) return null;
+  const b=await tokenBalance(pool,Number(position.telegram_id),position.token_address);
+  if(b.raw<=0n) return {raw:0n,priceSol:0,closedExternally:true};
+  const base=process.env.JUPITER_API_BASE||"https://api.jup.ag";
+  const probe=10n**BigInt(b.decimals);
+  const res=await fetch(base+"/swap/v1/quote?inputMint="+encodeURIComponent(position.token_address)+"&outputMint="+SOL+"&amount="+probe.toString()+"&slippageBps=100&restrictIntermediateTokens=true",{headers:{"x-api-key":apiKey,accept:"application/json"},signal:AbortSignal.timeout(15000)});
+  const q=await res.json().catch(()=>({}));
+  if(!res.ok||!q?.outAmount) return null;
+  return {raw:b.raw,priceSol:Number(q.outAmount)/LAMPORTS_PER_SOL};
+}
+
+async function monitorPositions(pool:Pool,bot?:BotLike) {
+  const open=await pool.query("SELECT * FROM public.engine_positions WHERE status='open' ORDER BY id ASC LIMIT 50");
+  for(const position of open.rows){
+    try{
+      const mark=await positionMark(pool,position);
+      if(!mark) continue;
+      if(mark.closedExternally){
+        await pool.query("UPDATE public.engine_positions SET remaining_amount=0,status='closed',closed_at=NOW() WHERE id=$1",[position.id]);
+        await saveEvent(pool,Number(position.telegram_id),"position_closed",position.token_address,{reason:"balance_reconciled_zero"});
+        if(bot) await bot.api.sendMessage(position.telegram_id,"⚠️ POSITION CLOSED\\n\\n"+position.token_address+"\\n\\nThe token balance is now zero. Position state was reconciled from the wallet.");
+        continue;
+      }
+      const entry=Number(position.entry_price||0);
+      if(entry<=0) continue;
+      const gain=((mark.priceSol-entry)/entry)*100;
+      const high=Math.max(Number(position.high_water_price||entry),mark.priceSol);
+      await pool.query("UPDATE public.engine_positions SET high_water_price=$2 WHERE id=$1",[position.id,high]);
+      const cfg=position.exit_config||{};
+      let target:any=null;
+      for(const t of (cfg.takeProfit||[])){
+        const pct=Number(t.pct);
+        if(gain>=pct && Number(t.sellPct)>0){
+          const marker="tp_"+pct;
+          const done=await pool.query("SELECT 1 FROM public.engine_events WHERE telegram_id=$1 AND token_address=$2 AND event_type=$3 LIMIT 1",[position.telegram_id,position.token_address,marker]);
+          if(!done.rowCount) { target={...t,marker}; break; }
+        }
+      }
+      let reason=target?"TP +"+target.pct+"%":null;
+      if(!target && Number(cfg.stopLossPct)<0 && gain<=Number(cfg.stopLossPct)) reason="SL "+cfg.stopLossPct+"%";
+      if(!target && !reason && cfg.trailing?.enabled && gain>=Number(cfg.trailing.activationPct)){
+        const pullback=((mark.priceSol-high)/high)*100;
+        if(pullback<=-Math.abs(Number(cfg.trailing.pullbackPct))) reason="TRAILING STOP";
+      }
+      if(reason){
+        const sellPct=target?Math.min(100,Number(target.sellPct)):100;
+        const rawToSell=target?BigInt(Math.max(1,Math.floor(Number(position.remaining_amount)*sellPct/100))):mark.raw;
+        const exit=await executePositionExit(pool,position,rawToSell,reason);
+        if(target && exit) await saveEvent(pool,Number(position.telegram_id),target.marker,position.token_address,{gainPct:gain});
+        if(bot && exit) await bot.api.sendMessage(position.telegram_id,"🟢 "+(reason.startsWith("SL")?"SL TRIGGERED":reason.startsWith("TRAILING")?"TRAILING STOP":"TP MILESTONE")+"\\n\\n"+position.token_address+"\\n\\nMove: "+gain.toFixed(2)+"%\\nRealized PnL: "+exit.pnl.toFixed(6)+" SOL");
+      }
+    }catch(e){console.warn("[engine] position reconciliation failed",position.id,String(e).slice(0,240));}
+  }
 }
 
 export function startEngine(pool:Pool,bot:BotLike) {
@@ -275,7 +377,7 @@ export function startEngine(pool:Pool,bot:BotLike) {
   const enabled=scannerEnabled || engineEnabled;
   const tick=async()=>{
     if(scanning)return;scanning=true;
-    try{await scanOnce(pool,bot);if(engineEnabled)await monitorPositions(pool);}
+    try{await scanOnce(pool,bot);if(engineEnabled)await monitorPositions(pool,bot);}
     catch(e){console.error("[scanner] cycle failed",e);}
     finally{scanning=false;}
   };
