@@ -125,14 +125,14 @@ async function home(ctx:any,d:Deps){
     "▸ WALLET MANAGER",
     "┣ Switch Wallet — choose which wallet new trades use.",
     "┣ Refresh Balance — verify the active wallet balance from RPC.",
-    "┗ Backup Wallet — review the secure backup state; private keys are never displayed here.",
+    "┗ Delete Wallet — remove an inactive wallet from La-Print.",
     "",
     "Choose an action."
   ].join("\n");
   const k=new InlineKeyboard()
     .text("＋ Create Wallet","mw:create").text("↗ Import Wallet","mw:import").row()
     .text("Switch Wallet","mw:switch").text("Refresh Balance","wallets:refresh").row()
-    .text("Backup Wallet","mw:backup").row()
+    .text("Delete Wallet","mw:delete:"+active.id).row()
     .text("‹ Back","menu").text("⌂ Main Menu","menu");
   return d.show(ctx,text,{parse_mode:"Markdown",reply_markup:k});
 }
@@ -175,14 +175,13 @@ async function view(ctx:any,d:Deps,id:string){
     "▸ ACTIONS",
     "┣ Use Wallet — make this the default wallet for new trades.",
     "┣ Copy Address — show the full public address for deposits.",
-    "┗ Backup Wallet — confirm secure backup guidance without exposing the private key.",
+    "┗ Delete Wallet — permanently remove this inactive wallet from La-Print.",
     "",
     "Choose an action."
   ].join("\n");
   const k=new InlineKeyboard();
   if(!w.is_active)k.text("Use Wallet","mw:use:"+id).row();
   k.text("Copy Address","mw:copy:"+id).text("Refresh Balance","mw:view:"+id).row();
-  k.text("Backup Wallet","mw:backup:"+id).row();
   k.text("Delete Wallet","mw:delete:"+id).row();
   k.text("‹ Back","mw:switch").text("⌂ Main Menu","menu");
   return d.show(ctx,text,{parse_mode:"Markdown",reply_markup:k});
