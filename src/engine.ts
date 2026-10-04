@@ -1,6 +1,7 @@
 import { Connection, Keypair, PublicKey, VersionedTransaction, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { getActiveTradingWallet } from "./multi-wallets.js";
 import { InlineKeyboard } from "grammy";
+import WebSocket from "ws";
 
 type Pool = any;
 type BotLike = any;
