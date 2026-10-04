@@ -14,7 +14,7 @@ type Strategy = {
   };
   execution?: {
     buyAmountSol?: number;
-    takeProfit?: {pct:number;sellPct:number}[];
+    takeProfit?: {pct:number;sellPct:number}[]; maxOpenPositions?: number; dailySpendingLimitSol?: number | null;
     stopLossPct?: number;
     trailing?: {enabled:boolean;activationPct:number;pullbackPct:number};
   };
