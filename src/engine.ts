@@ -250,6 +250,11 @@ async function scanOnce(pool:Pool, bot?:BotLike) {
       const msg=["📡 *QUALIFIED CALL*","","🪙 *"+c.symbol+"*","","CA:","`"+c.address+"`","","💵 MC: $"+(c.marketCap??"—"),"💧 Liquidity: $"+(c.liquidity??"—"),"📈 5M Volume: $"+(c.volume5m??"—"),"","🎯 Buy: "+(strategy.execution?.buyAmountSol??"—")+" SOL","🎯 TP: "+tp+"%","🛑 SL: "+sl+"%","",""+(u.mode==="manual"?"Review this call before execution.":"Qualified and ready for the configured execution path.")].join("\n");
       const k=new InlineKeyboard().text("📊 VIEW DETAILS","call:details:"+c.address);
       if(u.mode==="manual") k.row().text("✅ APPROVE","call:approve:"+c.address).text("❌ REJECT","call:reject:"+c.address);
+      if(u.mode!=="manual" && u.trading_active && process.env.ENGINE_MODE==="enabled"){
+        try{
+          await executeQualifiedEntry(pool,bot,u.telegram_id,c.address,c.symbol,strategy);
+        }catch(e){ console.warn("[engine] autopilot entry failed",u.telegram_id,c.address,String(e).slice(0,220)); }
+      }
       await bot.api.sendMessage(u.telegram_id,msg,{parse_mode:"Markdown",reply_markup:k});
       await saveEvent(pool,u.telegram_id,"qualified_call",c.address,{mode:u.mode||"autopilot",strategy:strategy.profile||"balanced"});
     }
@@ -275,7 +280,7 @@ async function tokenBalance(pool:Pool,telegramId:number,token:string) {
   return {wallet,raw,decimals};
 }
 
-async function openVerifiedPosition(pool:Pool,telegramId:number,token:string,symbol:string,buyAmountSol:number,result:SwapResult,strategy:Strategy) {
+export async function openVerifiedPosition(pool:Pool,telegramId:number,token:string,symbol:string,buyAmountSol:number,result:SwapResult,strategy:Strategy) {
   const wallet=await getActiveTradingWallet(pool,telegramId);
   if(!wallet) throw new Error("No active trading wallet.");
   const amount=BigInt(result.outputAmount);
@@ -290,6 +295,30 @@ async function openVerifiedPosition(pool:Pool,telegramId:number,token:string,sym
   );
   await saveEvent(pool,telegramId,"entry_executed",token,{signature:result.signature,inputAmount:result.inputAmount,outputAmount:result.outputAmount,positionId:inserted.rows[0].id});
   return inserted.rows[0].id;
+}
+
+
+
+export async function executeQualifiedEntry(pool:Pool,bot:BotLike,telegramId:number,address:string,symbol:string,strategy:Strategy){
+  const live=process.env.ENGINE_MODE==="enabled"&&process.env.LIVE_TRADING==="true"&&process.env.LIVE_TRADING_ACK==="I_ACCEPT_REAL_SOLANA_TRANSACTIONS";
+  if(!live) throw new Error("Live execution safety gate is not enabled.");
+  const wallet=await getActiveTradingWallet(pool,telegramId);
+  if(!wallet) throw new Error("No active trading wallet.");
+  const open=await pool.query("SELECT COUNT(*)::int AS n FROM public.engine_positions WHERE telegram_id=$1 AND status='open'",[telegramId]);
+  const maxOpen=Number(strategy.execution?.maxOpenPositions||3);
+  if(Number(open.rows[0]?.n||0)>=maxOpen) throw new Error("Maximum open positions reached.");
+  const amount=Math.floor(Number(strategy.execution?.buyAmountSol||0)*LAMPORTS_PER_SOL);
+  if(!Number.isFinite(amount)||amount<=0) throw new Error("Invalid configured buy amount.");
+  try{
+    const result=await executeJupiterSwap({pool,telegramId,inputMint:SOL,outputMint:address,amountAtomic:String(amount),side:"buy"});
+    const positionId=await openVerifiedPosition(pool,telegramId,address,symbol,Number(strategy.execution?.buyAmountSol||0),result,strategy);
+    await bot.api.sendMessage(telegramId,"🟢 ENTRY EXECUTED\\n\\n"+symbol+"\\n\\nCA:\\n"+address+"\\n\\nBuy: "+strategy.execution?.buyAmountSol+" SOL\\nTransaction:\\n"+result.signature);
+    return {result,positionId};
+  }catch(error){
+    await saveEvent(pool,telegramId,"execution_failed",address,{reason:String((error as any)?.message||error).slice(0,400),side:"buy"});
+    await bot.api.sendMessage(telegramId,"⚠️ EXECUTION FAILED\\n\\n"+address+"\\n\\n"+String((error as any)?.message||error).slice(0,300));
+    throw error;
+  }
 }
 
 async function executePositionExit(pool:Pool,position:any,rawAmount:bigint,reason:string) {
