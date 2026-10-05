@@ -431,28 +431,39 @@ async function monitorPositions(pool:Pool,bot?:BotLike) {
   }
 }
 
-export function startEngine(pool:Pool,bot:BotLike) {
+export async function startEngine(pool:Pool,bot:BotLike) {
   void bot;
   let scanning=false;
   const scannerEnabled=process.env.SCANNER_MODE==="enabled";
   const engineEnabled=process.env.ENGINE_MODE==="enabled";
   const enabled=scannerEnabled || engineEnabled;
+  if(!enabled){console.log("[scanner] disabled; set SCANNER_MODE=enabled to run discovery");return ()=>{};}
+  if(!pumpNativeConfigured()){console.error("[scanner] Pump.fun-native discovery is not configured; scanner remains idle");return ()=>{};}
+  const lockClient=await pool.connect();
+  const lockKey=734221;
+  const lock=await lockClient.query("SELECT pg_try_advisory_lock($1) AS locked",[lockKey]);
+  if(!lock.rows[0]?.locked){
+    lockClient.release();
+    console.warn("[engine] another instance owns the engine lock; scanner/position manager disabled on this instance");
+    return ()=>{};
+  }
+  if(!process.env.BIRDEYE_API_KEY){console.error("[scanner] Pump.fun discovery enabled but Birdeye enrichment key is missing; required enrichment will fail closed");}
   const tick=async()=>{
     if(scanning)return;scanning=true;
     try{await scanOnce(pool,bot);if(engineEnabled)await monitorPositions(pool,bot);}
     catch(e){console.error("[scanner] cycle failed",e);}
     finally{scanning=false;}
   };
-  if(!enabled){console.log("[scanner] disabled; set SCANNER_MODE=enabled to run discovery");return ()=>{};}
-  if(!pumpNativeConfigured()){console.error("[scanner] Pump.fun-native discovery is not configured; scanner remains idle");return ()=>{};}
-  if(!process.env.BIRDEYE_API_KEY){console.error("[scanner] Pump.fun discovery enabled but BIRDEYE enrichment key is missing; required enrichment will fail closed");}
   startPumpNativeStream();
   console.log("[scanner] Pump.fun-native discovery worker enabled; Birdeye is enrichment only; live execution remains independently gated");
   void tick();
   const timer=setInterval(()=>void tick(),Math.max(15000,Number(process.env.SCANNER_SCAN_INTERVAL_MS||process.env.ENGINE_SCAN_INTERVAL_MS)||30000));
-  return ()=>clearInterval(timer);
+  return ()=>{
+    clearInterval(timer);
+    try{pumpSocket?.close();}catch{}
+    void lockClient.query("SELECT pg_advisory_unlock($1)",[lockKey]).finally(()=>lockClient.release());
+  };
 }
-
 export async function getScannerView(pool:Pool,telegramId:number,status:"all"|"qualified"|"rejected"="all",offset=0) {
   const condition=status==="all"?"":" AND ecu.status=$2";
   const limitParam=status==="all"?"$2":"$3";
