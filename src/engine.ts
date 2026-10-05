@@ -239,6 +239,75 @@ async function saveEvent(pool:Pool,id:number|null,type:string,address:string|nul
   await pool.query("INSERT INTO public.engine_events(telegram_id,event_type,token_address,details) VALUES($1,$2,$3,$4)",[id,type,address,details]);
 }
 
+
+function formatUsd(v:number|null){return v==null?"—":"$"+Math.round(v).toLocaleString();}
+function formatPct(v:any){const n=Number(v);return Number.isFinite(n)?(n>=0?"+":"")+n.toFixed(1)+"%":"—";}
+function formatSol(v:any){const n=Number(v);return Number.isFinite(n)?n.toFixed(4)+" SOL":"—";}
+function qualifiedMessage(c:Candidate,strategy:Strategy,mode:string){
+  const tp=(strategy.execution?.takeProfit||[]).map(t=>"+"+t.pct+"% → sell "+t.sellPct+"%").join("\n")||"—";
+  const sl=strategy.execution?.stopLossPct;
+  const sec=c.security;
+  return [
+    mode==="manual"?"🟡 *QUALIFIED CALL*":"🤖 *AUTOPILOT SIGNAL*","",
+    "🔥 *"+c.symbol+"*","",
+    "📊 *MARKET*",
+    "Status: 🟢 QUALIFIED",
+    "💵 Market Cap: "+formatUsd(c.marketCap),
+    "💧 Liquidity: "+formatUsd(c.liquidity),
+    "📈 5m Volume: "+formatUsd(c.volume5m),
+    "👥 Holders: "+(c.holders==null?"—":c.holders.toLocaleString()),
+    "🐳 Top 10: "+(c.top10==null?"—":c.top10+"%"),
+    "👨‍💻 Dev: "+(c.devPct==null?"—":c.devPct+"%"),
+    "",
+    "🛡️ *SECURITY*",
+    "Mint: "+(sec.mintAuthority==="REVOKED"?"✅ Disabled":sec.mintAuthority),
+    "Freeze: "+(sec.freezeAuthority==="REVOKED"?"✅ Disabled":sec.freezeAuthority),
+    "Data: "+(sec.verified?"✅ Verified":"⚠️ Unverified"),
+    "",
+    "🎯 *TRADE PLAN*",
+    "Entry: "+formatSol(strategy.execution?.buyAmountSol),
+    "Stop Loss: "+(sl==null?"—":sl+"%"),
+    "Take Profit:",
+    tp,
+    "",
+    "📍 *CONTRACT*",
+    c.address,
+    "",
+    mode==="manual"?"⏳ *Awaiting your approval*":"⚡ *Qualified — execution will follow your strategy*"
+  ].join("\n");
+}
+function entryMessage(symbol:string,address:string,strategy:Strategy,result:SwapResult,positionId:any){
+  return [
+    "🟢 *ENTRY EXECUTED*","",
+    "🔥 *"+symbol+"*","",
+    "💰 *INVESTED*",
+    formatSol(strategy.execution?.buyAmountSol),
+    "",
+    "📦 *POSITION*",
+    "Status: 🟢 OPEN",
+    "Position ID: "+positionId,
+    "",
+    "🎯 *TRADE PLAN*",
+    "Stop Loss: "+(strategy.execution?.stopLossPct??"—")+"%",
+    "Take Profit:",
+    (strategy.execution?.takeProfit||[]).map(t=>"+"+t.pct+"% → sell "+t.sellPct+"%").join("\n")||"—",
+    "",
+    "🔗 *TRANSACTION*",
+    result.signature,
+    "",
+    "📍 *CONTRACT*",
+    address,
+    "",
+    "🛡️ *Position monitoring active*"
+  ].join("\n");
+}
+function executionFailureMessage(symbol:string,address:string,message:string){
+  return ["🔴 *TRADE FAILED*","","🔥 *"+symbol+"*","","The trade could not be completed.","","Reason:",message.slice(0,260),"","❌ *No position was opened.*","","📍 "+address].join("\n");
+}
+function unknownTransactionMessage(symbol:string,address:string){
+  return ["⚠️ *TRANSACTION STATUS UNKNOWN*","","🔥 *"+symbol+"*","","The transaction was broadcast, but confirmation could not be verified.","","⏳ Status: *Pending verification*","","🚫 *DO NOT RETRY YET*","The system will continue checking the transaction status automatically.","","📍 "+address].join("\n");
+}
+
 async function scanOnce(pool:Pool, bot?:BotLike) {
   const listings=takePumpCandidates(20);
   const users=await pool.query("SELECT telegram_id,strategy_profile,strategy_config,buy_amount,sl_percent,tp_config FROM public.users");
@@ -272,17 +341,16 @@ async function scanOnce(pool:Pool, bot?:BotLike) {
     const eventKey="qualified_call:"+c.address;
     const dedupe=await pool.query("INSERT INTO public.notification_events(telegram_id,event_key) VALUES($1,$2) ON CONFLICT DO NOTHING",[u.telegram_id,eventKey]);
     if(dedupe.rowCount===1){
-      const tp=(strategy.execution?.takeProfit||[]).map((t:any)=>"+"+t.pct).join(" / ")||"—";
-      const sl=strategy.execution?.stopLossPct ?? "—";
-      const msg=["📡 *QUALIFIED CALL*","","🪙 *"+c.symbol+"*","","CA:","`"+c.address+"`","","💵 MC: $"+(c.marketCap??"—"),"💧 Liquidity: $"+(c.liquidity??"—"),"📈 5M Volume: $"+(c.volume5m??"—"),"","🎯 Buy: "+(strategy.execution?.buyAmountSol??"—")+" SOL","🎯 TP: "+tp+"%","🛑 SL: "+sl+"%","",""+(u.mode==="manual"?"Review this call before execution.":"Qualified and ready for the configured execution path.")].join("\n");
+      const mode=u.mode==="manual"?"manual":"autopilot";
+      const msg=qualifiedMessage(c,strategy,mode);
       const k=new InlineKeyboard().text("📊 VIEW DETAILS","call:details:"+c.address);
-      if(u.mode==="manual") k.row().text("✅ APPROVE","call:approve:"+c.address).text("❌ REJECT","call:reject:"+c.address);
-      if(u.mode!=="manual" && u.trading_active && process.env.ENGINE_MODE==="enabled"){
+      if(mode==="manual") k.row().text("🟢 APPROVE TRADE","call:approve:"+c.address).text("❌ REJECT","call:reject:"+c.address);
+      await bot.api.sendMessage(u.telegram_id,msg,{parse_mode:"Markdown",reply_markup:k});
+      if(mode!=="manual" && u.trading_active && process.env.ENGINE_MODE==="enabled"){
         try{
           await executeQualifiedEntry(pool,bot,u.telegram_id,c.address,c.symbol,strategy);
         }catch(e){ console.warn("[engine] autopilot entry failed",u.telegram_id,c.address,String(e).slice(0,220)); }
       }
-      await bot.api.sendMessage(u.telegram_id,msg,{parse_mode:"Markdown",reply_markup:k});
       await saveEvent(pool,u.telegram_id,"qualified_call",c.address,{mode:u.mode||"autopilot",strategy:strategy.profile||"balanced"});
     }
   }
@@ -374,15 +442,15 @@ export async function executeQualifiedEntry(pool:Pool,bot:BotLike,telegramId:num
   try{
     const result=await executeJupiterSwap({pool,telegramId,inputMint:SOL,outputMint:address,amountAtomic:String(amount),side:"buy"});
     const positionId=await openVerifiedPosition(pool,telegramId,address,symbol,Number(strategy.execution?.buyAmountSol||0),result,strategy);
-    await bot.api.sendMessage(telegramId,"🟢 ENTRY EXECUTED\\n\\n"+symbol+"\\n\\nCA:\\n"+address+"\\n\\nBuy: "+strategy.execution?.buyAmountSol+" SOL\\nTransaction:\\n"+result.signature);
+    await bot.api.sendMessage(telegramId,entryMessage(symbol,address,strategy,result,positionId),{parse_mode:"Markdown"});
     return {result,positionId};
   }catch(error){
     const message=String((error as any)?.message||error);
     const unknown=message.startsWith("TRANSACTION_STATUS_UNKNOWN:");
     await saveEvent(pool,telegramId,unknown?"execution_status_unknown":"execution_failed",address,{reason:message.slice(0,400),side:"buy"});
     await bot.api.sendMessage(telegramId,unknown
-      ?"⚠️ TRANSACTION STATUS UNKNOWN\\n\\n"+address+"\\n\\nThe transaction was broadcast but confirmation could not be verified. Check the transaction before retrying."
-      :"⚠️ EXECUTION FAILED\\n\\n"+address+"\\n\\n"+message.slice(0,300));
+      ?unknownTransactionMessage(symbol,address)
+      :executionFailureMessage(symbol,address,message),{parse_mode:"Markdown"});
     throw error;
   }
   });
@@ -473,6 +541,19 @@ async function monitorPositions(pool:Pool,bot?:BotLike) {
       let reason=target?"TP +"+target.pct+"%":null;
       if(!target && Number(cfg.stopLossPct)<0 && gain<=Number(cfg.stopLossPct)) reason="SL "+cfg.stopLossPct+"%";
       if(!target && !reason && cfg.trailing?.enabled && gain>=Number(cfg.trailing.activationPct)){
+        const activationKey="trailing_active:"+position.id;
+        const active=await pool.query("SELECT 1 FROM public.engine_events WHERE telegram_id=$1 AND token_address=$2 AND event_type=$3 LIMIT 1",[position.telegram_id,position.token_address,activationKey]);
+        if(!active.rowCount){
+          await saveEvent(pool,Number(position.telegram_id),activationKey,position.token_address,{positionId:position.id,highWaterPrice:high,activationPct:Number(cfg.trailing.activationPct),pullbackPct:Number(cfg.trailing.pullbackPct)});
+          if(bot) await bot.api.sendMessage(position.telegram_id,[
+            "🟠 *TRAILING STOP ACTIVE*","",
+            "🔥 *"+(position.symbol||"TOKEN")+"*","",
+            "📈 High Water Mark: *"+formatPct(gain)+"*",
+            "🔻 Pullback Required: *-"+Math.abs(Number(cfg.trailing.pullbackPct)).toFixed(1)+"%*",
+            "",
+            "🛡️ Position remains open while the trailing stop is monitored."
+          ].join("\n"),{parse_mode:"Markdown"});
+        }
         const pullback=((mark.priceSol-high)/high)*100;
         if(pullback<=-Math.abs(Number(cfg.trailing.pullbackPct))) reason="TRAILING STOP";
       }
@@ -484,7 +565,14 @@ async function monitorPositions(pool:Pool,bot?:BotLike) {
           : remainingRaw;
         const exit=await executePositionExit(pool,position,rawToSell,reason);
         if(target && exit) await saveEvent(pool,Number(position.telegram_id),target.marker,position.token_address,{gainPct:gain,positionId:position.id});
-        if(bot && exit) await bot.api.sendMessage(position.telegram_id,"🟢 "+(reason.startsWith("SL")?"SL TRIGGERED":reason.startsWith("TRAILING")?"TRAILING STOP":"TP MILESTONE")+"\\n\\n"+position.token_address+"\\n\\nMove: "+gain.toFixed(2)+"%\\nRealized PnL: "+exit.pnl.toFixed(6)+" SOL");
+        if(bot && exit){
+          const final=reason.startsWith("SL") || reason.startsWith("TRAILING") || !target;
+          const header=reason.startsWith("SL")?"🔴 *STOP LOSS TRIGGERED*":reason.startsWith("TRAILING")?"🟠 *TRAILING EXIT EXECUTED*":final?"🏆 *POSITION CLOSED*":"🟢 *TAKE-PROFIT HIT*";
+          const label=reason.startsWith("SL")?"Position exited":reason.startsWith("TRAILING")?"Position exited":"Sold "+Math.min(100,Number(target?.sellPct||100))+"% of position";
+          const remaining=final?0:Math.max(0,100-(Number(target?.sellPct||0)));
+          const text=[header,"","🔥 *"+(position.symbol||"TOKEN")+"*","","📈 Move: "+formatPct(gain),"💰 Action: "+label,"💵 Realized PnL: "+(exit.pnl>=0?"+":"")+exit.pnl.toFixed(6)+" SOL","",final?"📦 Position: *100% CLOSED*":"📦 Remaining: *"+remaining.toFixed(0)+"%*","","🔗 TX",exit.result.signature].join("\n");
+          await bot.api.sendMessage(position.telegram_id,text,{parse_mode:"Markdown"});
+        }
       }
     }catch(e){console.warn("[engine] position reconciliation failed",position.id,String(e).slice(0,240));}
   }
