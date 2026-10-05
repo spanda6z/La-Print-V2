@@ -669,6 +669,137 @@ bot.callbackQuery(/^scanner:token:([1-9A-HJ-NP-Za-km-z]{32,44})$/,async ctx=>{
   return show(ctx,text,{reply_markup:new InlineKeyboard().text("⬅️ DISCOVER","discover").text("🏠 MAIN MENU","menu")});
 });
 
+
+async function referralScreen(ctx:Ctx){
+  const text=[
+    uiHeader("REFERRALS","🎁"),
+    "",
+    "Invite friends to LA-PRINT and build your referral network.",
+    "",
+    uiSection("How it works","💡"),
+    "",
+    "Your personal referral link connects new users to your account. Referral activity and eligible rewards are tracked by LA-PRINT.",
+    "",
+    uiSection("Your referral status","📊"),
+    "",
+    "👥 Referrals       0",
+    "💰 Rewards         0 SOL",
+    "🏆 Rank            —",
+    "",
+    "Your referral link will appear here once the referral program is enabled for your account.",
+    "",
+    uiSection("Actions","🛠️"),
+    "",
+    "Use the buttons below to access your link, share it, or review your referral activity.",
+    "",
+    uiFooter()
+  ].join("\n");
+  const k=new InlineKeyboard().text("🔗 GET MY LINK","referral:link").text("📤 SHARE","referral:share").row()
+    .text("📊 MY STATS","referral:stats").text("ℹ️ HOW IT WORKS","referral:info").row()
+    .text("⬅️ BACK","menu").text("🏠 MAIN MENU","menu");
+  return show(ctx,text,{parse_mode:"Markdown",reply_markup:k});
+}
+async function helpScreen(ctx:Ctx){
+  const text=[
+    uiHeader("HELP & SUPPORT","❓"),
+    "",
+    "Need help with LA-PRINT? Start with the topic that matches what you are trying to do.",
+    "",
+    uiSection("Support areas","📚"),
+    "",
+    "🚀 Trading — understand Manual and Autopilot execution.",
+    "👛 Wallet — create, import, switch and fund a trading wallet.",
+    "🎯 Strategy — configure entries, risk, TP and SL.",
+    "📈 Positions — understand open positions and lifecycle updates.",
+    "",
+    "If the built-in guides do not answer your question, use Contact Support to reach the support channel.",
+    "",
+    uiFooter()
+  ].join("\n");
+  const k=new InlineKeyboard().text("🚀 TRADING GUIDE","help:trading").text("👛 WALLET HELP","help:wallet").row()
+    .text("🎯 STRATEGY HELP","help:strategy").text("📈 POSITION HELP","help:positions").row()
+    .text("💬 CONTACT SUPPORT","help:contact").text("🐛 REPORT A PROBLEM","help:report").row()
+    .text("📚 DOCUMENTATION","docs").text("🏠 MAIN MENU","menu");
+  return show(ctx,text,{parse_mode:"Markdown",reply_markup:k});
+}
+async function docsScreen(ctx:Ctx){
+  const text=[
+    uiHeader("DOCUMENTATION","📚"),
+    "",
+    "Learn how LA-PRINT works before enabling live trading.",
+    "",
+    uiSection("Guides","📖"),
+    "",
+    "🚀 Getting Started — onboarding, wallet and first setup.",
+    "🤖 Autopilot — how qualified calls move through execution.",
+    "✋ Manual Trading — review and approve calls yourself.",
+    "🎯 Strategy & Risk — buy size, TP, SL and limits.",
+    "👛 Wallets — wallet management and funding.",
+    "",
+    "Use the guide buttons below to open the relevant explanation.",
+    "",
+    uiFooter()
+  ].join("\n");
+  const k=new InlineKeyboard().text("🚀 GETTING STARTED","docs:start").text("🤖 AUTOPILOT","docs:auto").row()
+    .text("✋ MANUAL","docs:manual").text("🎯 STRATEGY & RISK","docs:risk").row()
+    .text("👛 WALLETS","docs:wallets").text("🏠 MAIN MENU","menu");
+  return show(ctx,text,{parse_mode:"Markdown",reply_markup:k});
+}
+async function leaderboardScreen(ctx:Ctx){
+  const text=[
+    uiHeader("LEADERBOARD","🏆"),
+    "",
+    "See how traders are performing across the LA-PRINT community.",
+    "",
+    uiSection("Leaderboard","📊"),
+    "",
+    "🥇 #1   Coming soon",
+    "🥈 #2   Coming soon",
+    "🥉 #3   Coming soon",
+    "",
+    "The leaderboard will display verified trading performance once the community ranking system is enabled.",
+    "",
+    uiSection("Your standing","👤"),
+    "",
+    "🏅 Rank            —",
+    "📈 Realized PnL     —",
+    "🔥 Trades          —",
+    "",
+    uiFooter()
+  ].join("\n");
+  return show(ctx,text,{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔄 REFRESH","leaderboard").row().text("⬅️ BACK","menu").text("🏠 MAIN MENU","menu")});
+}
+bot.callbackQuery("referral",async ctx=>{await ctx.answerCallbackQuery();return referralScreen(ctx);});
+bot.callbackQuery("referral:link",async ctx=>{await ctx.answerCallbackQuery("Referral link is not enabled yet");return referralScreen(ctx);});
+bot.callbackQuery("referral:share",async ctx=>{await ctx.answerCallbackQuery("Referral sharing is not enabled yet");return referralScreen(ctx);});
+bot.callbackQuery("referral:stats",async ctx=>{await ctx.answerCallbackQuery();return referralScreen(ctx);});
+bot.callbackQuery("referral:info",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,[uiHeader("REFERRAL PROGRAM","🎁"),"","The referral program is designed to reward users who bring new traders to LA-PRINT.","","Referral eligibility, attribution and rewards are recorded by the platform. Exact reward rules will be shown here when the program is active.","",uiFooter()].join("\n"),{parse_mode:"Markdown",reply_markup:navigationKeyboard("referral")});});
+bot.callbackQuery("leaderboard",async ctx=>{await ctx.answerCallbackQuery();return leaderboardScreen(ctx);});
+bot.callbackQuery("help",async ctx=>{await ctx.answerCallbackQuery();return helpScreen(ctx);});
+bot.callbackQuery("docs",async ctx=>{await ctx.answerCallbackQuery();return docsScreen(ctx);});
+bot.callbackQuery(/^help:(trading|wallet|strategy|positions)$/,async ctx=>{
+  await ctx.answerCallbackQuery();
+  const titles:{[key:string]:string}={trading:"TRADING GUIDE",wallet:"WALLET GUIDE",strategy:"STRATEGY GUIDE",positions:"POSITION GUIDE"};
+  const body:{[key:string]:string}={
+    trading:"LA-PRINT first evaluates a token against your configured rules. In Manual mode you review qualified calls before approval. In Autopilot mode qualifying calls can proceed automatically when all safety gates are satisfied.",
+    wallet:"Your active wallet is the wallet used for new trades. Keep enough SOL available for the trade amount plus network fees. Refresh the balance whenever you fund the wallet.",
+    strategy:"Your strategy controls entry size, maximum exposure, stop loss, take profit, position limits and other risk rules. Changes affect future entries.",
+    positions:"Positions are monitored after entry. LA-PRINT can report take-profit milestones, stop-loss events, trailing exits and final closure as the position changes."
+  };
+  return show(ctx,[uiHeader(titles[ctx.match[1]],"📖"),"",body[ctx.match[1]],"","Use the buttons below to return to Help or the main menu.","",uiFooter()].join("\n"),{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("❓ HELP","help").text("📚 DOCS","docs").row().text("🏠 MAIN MENU","menu")});
+});
+bot.callbackQuery(/^docs:(start|auto|manual|risk|wallets)$/,async ctx=>{
+  await ctx.answerCallbackQuery();
+  const titles:{[key:string]:string}={start:"GETTING STARTED",auto:"AUTOPILOT",manual:"MANUAL TRADING",risk:"STRATEGY & RISK",wallets:"WALLETS"};
+  const body:{[key:string]:string}={
+    start:"Complete onboarding, accept the terms, create or import a wallet, configure your strategy, then review the setup before starting trading.",
+    auto:"Autopilot watches for qualified calls and can execute according to your saved strategy when live execution is explicitly enabled.",
+    manual:"Manual mode sends qualified calls to you first. Review the market and security information, then approve or reject the call.",
+    risk:"Buy amount, stop loss, take-profit targets, maximum open positions and daily spending limits work together to control exposure.",
+    wallets:"Manage the active trading wallet from Wallet. Fund it with SOL, refresh its RPC balance, and switch wallets when needed."
+  };
+  return show(ctx,[uiHeader(titles[ctx.match[1]],"📚"),"",body[ctx.match[1]],"","These guides explain the intended behavior; always review your configured values before enabling live execution.","",uiFooter()].join("\n"),{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("📚 DOCS","docs").text("❓ HELP","help").row().text("🏠 MAIN MENU","menu")});
+});
 bot.on("message:text",async ctx=>{
   if(!ctx.session.input)return;
   const raw=ctx.message.text.trim();
