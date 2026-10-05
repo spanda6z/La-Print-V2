@@ -8,7 +8,8 @@ import { notifyAdmin } from "./admin-notifications.js";
 import { registerAdminConsole, recordAdminEvent } from "./admin-console.js";
 import { registerStrategySettings } from "./settings-v2.js";
 import { registerMultiWallets, ensureMultiWalletSchema } from "./multi-wallets.js";
-import { ensureEngineSchema, startEngine, getScannerView, getScannerToken, executeJupiterSwap, openVerifiedPosition } from "./engine.js";
+import { ensureEngineSchema, startEngine, getScannerView, getScannerToken, executeQualifiedEntry } from "./engine.js";
+import { uiHeader, uiSection, uiFooter, uiKeyboard, mainMenuKeyboard, navigationKeyboard } from "./ui.js";
 
 const { Pool } = pg;
 const token = process.env.BOT_TOKEN ?? process.env.TELEGRAM_BOT_TOKEN;
@@ -191,6 +192,13 @@ async function saveWallet(telegramId: number, keypair: Keypair) {
   );
   const saved = await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[telegramId]);
   if (saved.rows[0]?.public_key !== address) throw new Error("A wallet already exists; it was not replaced.");
+  await pool.query(
+    `INSERT INTO public.trading_wallets(telegram_id,name,public_key,encrypted_secret,encryption_iv,encryption_tag,is_active)
+     VALUES($1,$2,$3,$4,$5,$6,TRUE)
+     ON CONFLICT(public_key) DO UPDATE SET is_active=TRUE,updated_at=NOW()`,
+    [telegramId,"Primary",address,secret.encrypted,secret.iv,secret.tag]
+  );
+  await pool.query("UPDATE public.trading_wallets SET is_active=FALSE,updated_at=NOW() WHERE telegram_id=$1 AND public_key<>$2",[telegramId,address]);
   await patch(telegramId,{wallet_address:address,wallet_balance:0});
   return address;
 }
@@ -223,9 +231,10 @@ async function once(id:number,key:string) {
 
 const back = (target="setup") => new InlineKeyboard().text("⬅️ BACK",target).text("🏠 MAIN MENU","menu");
 
-const modeKb = () => new InlineKeyboard()
-  .text("🎯 AUTOPILOT","mode:auto").text("✋ MANUAL","mode:manual")
-  .row().text("⬅️ BACK","menu").text("🏠 MAIN MENU","menu");
+const modeKb = () => uiKeyboard([
+  [["🎯 AUTOPILOT","mode:auto"],["✋ MANUAL","mode:manual"]],
+  [["⬅️ BACK","menu"],["🏠 MAIN MENU","menu"]]
+]);
 
 const setupKb = (_u?:any) => {
   const k=new InlineKeyboard()
@@ -246,52 +255,76 @@ const mainKb = (active:boolean,mode:string) => {
   return k;
 };
 
-const buyKb=()=>new InlineKeyboard()
-  .text("0.01 SOL","buy:0.01").text("0.05 SOL","buy:0.05").row()
-  .text("0.10 SOL","buy:0.10").text("0.25 SOL","buy:0.25").row()
-  .text("✏️ CUSTOM","buy:custom").row().text("⬅️ BACK","setup");
+const buyKb=()=>uiKeyboard([
+  [["0.01 SOL","buy:0.01"],["0.05 SOL","buy:0.05"]],
+  [["0.10 SOL","buy:0.10"],["0.25 SOL","buy:0.25"]],
+  [["✏️ CUSTOM AMOUNT","buy:custom"]],
+  [["⬅️ BACK","setup"],["🏠 MAIN MENU","menu"]]
+]);
 
-const tpKb=()=>new InlineKeyboard()
-  .text("⚡ SIMPLE TP","tp:simple").text("🧠 PARTIAL EXITS","tp:partial").row()
-  .text("⬅️ BACK","setup");
+const tpKb=()=>uiKeyboard([
+  [["⚡ SIMPLE TP","tp:simple"],["🧠 PARTIAL EXITS","tp:partial"]],
+  [["⬅️ BACK","setup"],["🏠 MAIN MENU","menu"]]
+]);
 
-const slKb=()=>new InlineKeyboard()
-  .text("-10%","sl:-10").text("-15%","sl:-15").row()
-  .text("-20%","sl:-20").text("-25%","sl:-25").row()
-  .text("✏️ CUSTOM","sl:custom").row().text("⬅️ BACK","setup");
+const slKb=()=>uiKeyboard([
+  [["-10%","sl:-10"],["-15%","sl:-15"]],
+  [["-20%","sl:-20"],["-25%","sl:-25"]],
+  [["✏️ CUSTOM STOP LOSS","sl:custom"]],
+  [["⬅️ BACK","setup"],["🏠 MAIN MENU","menu"]]
+]);
 
-const filterKb=()=>new InlineKeyboard()
-  .text("🟢 PRE-BOND","filter:pre").text("🚀 NEW LAUNCHES","filter:new").row()
-  .text("🔥 BOTH","filter:both").row()
-  .text("⚙️ FILTER SETTINGS","filter:settings").text("🧠 SMART FILTERS","filter:smart").row()
-  .text("⬅️ BACK","setup");
+const filterKb=()=>uiKeyboard([
+  [["🟢 PRE-BOND","filter:pre"],["🚀 NEW LAUNCHES","filter:new"]],
+  [["🔥 BOTH","filter:both"]],
+  [["⚙️ FILTER SETTINGS","filter:settings"],["🧠 SMART FILTERS","filter:smart"]],
+  [["⬅️ BACK","setup"],["🏠 MAIN MENU","menu"]]
+]);
 
-const walletKb=(target="menu")=>new InlineKeyboard().text("➕ CREATE WALLET","mw:create").text("📥 IMPORT WALLET","mw:import").row().text("🔄 REFRESH","wallets:refresh").row().text("⬅️ BACK",target).text("🏠 MAIN MENU","menu");
-const alertKb=(a:any={})=>new InlineKeyboard()
-  .text("🟢 MILESTONES: ALWAYS ON","noop").row()
-  .text((a.newToken?"☑":"☐")+" NEW TOKEN","alert:new").text((a.liquidity?"☑":"☐")+" LIQUIDITY","alert:liq").row()
-  .text((a.volume?"☑":"☐")+" VOLUME","alert:vol").text((a.bonding?"☑":"☐")+" BONDING","alert:bond").row()
-  .text((a.watchlist?"☑":"☐")+" WATCHLIST","alert:watch").row()
-  .text("💾 SAVE ALERTS","alert:save").row().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu");
+const walletKb=(target="menu")=>uiKeyboard([
+  [["➕ CREATE WALLET","mw:create"],["📥 IMPORT WALLET","mw:import"]],
+  [["🔄 REFRESH BALANCE","wallets:refresh"]],
+  [["⬅️ BACK",target],["🏠 MAIN MENU","menu"]]
+]);
+
+const alertKb=(a:any={})=>uiKeyboard([
+  [["🟢 MILESTONES: ALWAYS ON","noop"]],
+  [[(a.newToken?"☑":"☐")+" NEW TOKEN","alert:new"],[(a.liquidity?"☑":"☐")+" LIQUIDITY","alert:liq"]],
+  [[(a.volume?"☑":"☐")+" VOLUME","alert:vol"],[(a.bonding?"☑":"☐")+" BONDING","alert:bond"]],
+  [[(a.watchlist?"☑":"☐")+" WATCHLIST","alert:watch"]],
+  [["💾 SAVE ALERTS","alert:save"]],
+  [["⬅️ BACK","setup"],["🏠 MAIN MENU","menu"]]
+]);
 
 async function menu(ctx:Ctx){
   const u=await user(ctx.from!.id,ctx.from!.username);
   const active=Boolean(u.trading_active);
   const wallet=await pool.query("SELECT name,public_key,is_active FROM public.trading_wallets WHERE telegram_id=$1 AND is_active=TRUE LIMIT 1",[ctx.from!.id]);
   let balance=Number(u.wallet_balance||0);
-  if(wallet.rowCount){ try { balance=await readSolBalance(wallet.rows[0].public_key); await patch(ctx.from!.id,{wallet_balance:balance,...(balance>0?{funding_prompt_sent:false}:{})}); } catch {} }
+  if(wallet.rowCount){
+    try { balance=await readSolBalance(wallet.rows[0].public_key); await patch(ctx.from!.id,{wallet_balance:balance,...(balance>0?{funding_prompt_sent:false}:{})}); } catch {}
+  }
   const configured=Boolean(u.buy_amount&&u.tp_config&&u.sl_percent&&u.filters&&u.alerts&&wallet.rowCount);
-  const mode=u.mode==="manual"?"✋ MANUAL":u.mode==="autopilot"?"🎯 AUTOPILOT":"⚪ NOT CONFIGURED";
-  const text="🚀 LAPrINT TRADE\n\nYour trading dashboard.\n\n💰 Balance: "+(Number.isFinite(balance)?balance.toFixed(4):"—")+" SOL\n🎯 Trading mode: "+mode+"\n📊 Open positions: 0\n📈 Realized PnL: 0 SOL\n\n"+(configured?"Your trading setup is ready.":"Set up your trading rules before starting.");
-  const k=new InlineKeyboard();
-  if(!configured) k.text("⚙️ CONFIGURE TRADING","setup").row();
-  else k.text(active?(u.mode==="manual"?"⏹️ STOP FEED":"⏹️ STOP AUTOPILOT"):(u.mode==="manual"?"▶️ START FEED":"🚀 START"),active?"trade:stop":"trade:start").row();
-  k.text("🎯 AUTOPILOT","mode:auto").text("✋ MANUAL","mode:manual").row();
-  k.text("💰 WALLET","wallets").text("📊 POSITIONS","positions").row();
-  k.text("📡 ACTIVITY","activity").text("⚙️ SETTINGS","setup").row();
-  k.text("🔎 DISCOVER","discover");
-  await show(ctx,text,{reply_markup:k});
+  const mode=u.mode==="manual"?"✋ Manual":u.mode==="autopilot"?"🎯 Autopilot":"⚪ Not configured";
+  const text=[
+    uiHeader("MAIN MENU"),
+    "",
+    "Welcome back to LA-PRINT.",
+    "",
+    uiSection("Trading Overview","📊"),
+    "",
+    "💰 Balance       "+(Number.isFinite(balance)?balance.toFixed(4):"—")+" SOL",
+    "🎯 Mode          "+mode,
+    "🟢 Status        "+(active?"Trading active":"Ready / stopped"),
+    "⚙️ Setup         "+(configured?"Complete":"Needs configuration"),
+    "",
+    "LA-PRINT helps you discover qualified Solana tokens and manage them through your saved trading rules. Use the sections below to review your wallet, strategy, positions, referrals and support resources.",
+    "",
+    uiFooter()
+  ].join("\n");
+  return show(ctx,text,{parse_mode:"Markdown",reply_markup:mainMenuKeyboard(active,u.mode||"autopilot")});
 }
+
 async function modeScreen(ctx:Ctx){
   await user(ctx.from!.id,ctx.from!.username);
   await show(ctx,"🚀 LAPrINT TRADE\\n━━━━━━━━━━━━━━━━━━━━\\n\\n"+
@@ -306,34 +339,169 @@ async function setupScreen(ctx:Ctx){
   const u=await user(ctx.from!.id,ctx.from!.username);
   const wallet=await pool.query("SELECT id FROM public.trading_wallets WHERE telegram_id=$1 AND is_active=TRUE",[ctx.from!.id]);
   const missing=[!u.buy_amount?"Buy amount":null,!u.tp_config?"Take profit":null,!u.sl_percent?"Stop loss":null,!u.filters?"Filters":null,!u.alerts?"Alerts":null,!wallet.rowCount?"Wallet":null].filter(Boolean) as string[];
-  const text="⚙️ Trade Setup\n\nChoose a ready-made trading setup, or customize everything yourself.\n\nThe ready-made setups automatically configure your buy amount, take profit, stop loss, token filters, Smart Filters and alerts.\n\n"+(missing.length?"Next: "+missing[0]:"Your current setup is complete.");
-  await show(ctx,text,{reply_markup:new InlineKeyboard().text("🛡️ BALANCED","preset:balanced").text("⚡ AGGRESSIVE","preset:aggressive").row().text("✏️ CUSTOM SETUP","preset:custom").row().text("🧾 REVIEW","review").row().text("⬅️ BACK","menu")});
+  const text=[
+    uiHeader("TRADE SETUP","⚙️"),
+    "",
+    "Build a ready-to-use strategy or customize each rule yourself.",
+    "",
+    uiSection("SETUP STATUS","📊"),
+    "",
+    missing.length ? "⚠️ Next required: "+missing[0] : "✅ Your current setup is complete.",
+    "",
+    uiSection("READY-MADE SETUPS","🛡️"),
+    "",
+    "Balanced and Aggressive presets configure the core trading rules for you.",
+    "",
+    uiSection("CUSTOM SETUP","✏️"),
+    "",
+    "Change buy size, TP, SL, filters, alerts and wallet settings individually.",
+    "",
+    uiFooter()
+  ].join("\n");
+  await show(ctx,text,{parse_mode:"Markdown",reply_markup:uiKeyboard([
+    [["🛡️ BALANCED","preset:balanced"],["⚡ AGGRESSIVE","preset:aggressive"]],
+    [["✏️ CUSTOMIZE SETUP","preset:custom"]],
+    [["🧾 REVIEW CURRENT SETUP","review"]],
+    [["⬅️ BACK","menu"],["🏠 MAIN MENU","menu"]]
+  ])});
 }
 
 async function manualSetupScreen(ctx:Ctx){
   const u=await user(ctx.from!.id,ctx.from!.username);
   const wallet=await pool.query("SELECT id FROM public.trading_wallets WHERE telegram_id=$1 AND is_active=TRUE",[ctx.from!.id]);
-  await show(ctx,"⚙️ Custom Trading Setup\n\nChange any trading rule yourself.\n\n💰 Buy amount: "+(u.buy_amount?"✅ "+u.buy_amount+" SOL":"❌ Required")+"\n🎯 Take profit: "+(u.tp_config?"✅ Saved":"❌ Required")+"\n🛑 Stop loss: "+(u.sl_percent?"✅ "+u.sl_percent+"%":"❌ Required")+"\n🔎 Filters: "+(u.filters?"✅ Saved":"❌ Required")+"\n🔔 Alerts: "+(u.alerts?"✅ Saved":"❌ Required")+"\n💰 Wallet: "+(wallet.rowCount?"✅ Ready":"❌ Required"),{reply_markup:new InlineKeyboard().text("💰 BUY AMOUNT","setup:buy").text("🎯 TAKE PROFIT","setup:tp").row().text("🛑 STOP LOSS","setup:sl").text("🔎 FILTERS","setup:filters").row().text("🔔 ALERTS","setup:alerts").text("💰 WALLET","wallets").row().text("🧾 REVIEW","review").row().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu")});
+  const text=[
+    uiHeader("CUSTOM SETUP","⚙️"),
+    "",
+    "Adjust your trading rules one section at a time.",
+    "",
+    uiSection("CURRENT CONFIGURATION","📊"),
+    "",
+    "💰 Buy amount   "+(u.buy_amount?"✅ "+u.buy_amount+" SOL":"❌ Required"),
+    "🎯 Take profit  "+(u.tp_config?"✅ Saved":"❌ Required"),
+    "🛑 Stop loss    "+(u.sl_percent?"✅ "+u.sl_percent+"%":"❌ Required"),
+    "🔎 Filters      "+(u.filters?"✅ Saved":"❌ Required"),
+    "🔔 Alerts       "+(u.alerts?"✅ Saved":"❌ Required"),
+    "👛 Wallet       "+(wallet.rowCount?"✅ Ready":"❌ Required"),
+    "",
+    uiFooter()
+  ].join("\n");
+  await show(ctx,text,{parse_mode:"Markdown",reply_markup:uiKeyboard([
+    [["💰 BUY AMOUNT","setup:buy"],["🎯 TAKE PROFIT","setup:tp"]],
+    [["🛑 STOP LOSS","setup:sl"],["🔎 FILTERS","setup:filters"]],
+    [["🔔 ALERTS","setup:alerts"],["👛 WALLET","wallets"]],
+    [["🧾 REVIEW SETUP","review"]],
+    [["⬅️ BACK","setup"],["🏠 MAIN MENU","menu"]]
+  ])});
 }
 
 async function setupDetails(ctx:Ctx){
   const u=await user(ctx.from!.id,ctx.from!.username),f=u.filters||{};
   const tp=u.tp_config?.targets?.map((t:any)=>"+"+t.pct+"% → sell "+t.sellPct+"%").join(" / ")||"Not set";
-  const text="⚙️ Trading Configuration\n\n💰 Buy amount: "+(u.buy_amount??"Not set")+" SOL\n🎯 Take profit: "+tp+"\n🛑 Stop loss: "+(u.sl_percent??"Not set")+"%\n\n🔎 Market cap: $"+(f.minMc??"—")+"+\n💧 Liquidity: $"+(f.minLiquidity??"—")+"+\n📈 5M volume: $"+(f.minVolume5m??"—")+"+\n⏱️ Token age: "+(f.minAgeSec??"—")+"–"+(f.maxAgeMin??"—")+" minutes\n👥 Holders: "+(f.minHolders??"—")+"+\n🐳 Top 10: ≤ "+(f.maxTop10??"—")+"%\n👨‍💻 Developer: ≤ "+(f.maxDev??"—")+"%\n🧠 Smart Filters: "+(f.smart===false?"OFF":"ON")+"\n🔔 Alerts: "+(u.alerts?"Configured":"Not set");
-  await show(ctx,text,{reply_markup:new InlineKeyboard().text("✏️ EDIT SETTINGS","setup").row().text("🎯 AUTOPILOT","mode:auto").text("✋ MANUAL","mode:manual").row().text("🧾 REVIEW","review").text("🏠 MAIN MENU","menu")});
+  const mode=u.mode==="manual"?"✋ Manual":"🎯 Autopilot";
+  const text=[
+    uiHeader("TRADING CONFIGURATION","⚙️"),
+    "",
+    "Review the rules currently used for qualified calls.",
+    "",
+    uiSection("TRADE RULES","🎯"),
+    "",
+    "💰 Buy amount     "+(u.buy_amount??"Not set")+" SOL",
+    "🎯 Take profit    "+tp,
+    "🛑 Stop loss      "+(u.sl_percent??"Not set")+"%",
+    "",
+    uiSection("DISCOVERY FILTERS","🔎"),
+    "",
+    "📈 Market cap     $"+(f.minMc??"—")+" → "+(f.maxMc==null?"∞":"$"+f.maxMc),
+    "💧 Liquidity      ≥ $"+(f.minLiquidity??"—"),
+    "📊 5M volume      ≥ $"+(f.minVolume5m??"—"),
+    "⏱️ Token age      "+(f.minAgeSec??"—")+" sec → "+(f.maxAgeMin??"—")+" min",
+    "👥 Holders        ≥ "+(f.minHolders??"—"),
+    "🐳 Top 10         ≤ "+(f.maxTop10??"—")+"%",
+    "👨‍💻 Developer      ≤ "+(f.maxDev??"—")+"%",
+    "🧠 Smart filters  "+(f.smart===false?"OFF":"ON"),
+    "",
+    uiSection("STATUS","📊"),
+    "",
+    "🎯 Mode           "+mode,
+    "🔔 Alerts         "+(u.alerts?"Configured":"Not set"),
+    "",
+    "Edit any rule before activating trading.",
+    "",
+    uiFooter()
+  ].join("\n");
+  await show(ctx,text,{parse_mode:"Markdown",reply_markup:uiKeyboard([
+    [["✏️ EDIT SETTINGS","setup"]],
+    [["🚀 AUTOPILOT","mode:auto"],["✋ MANUAL","mode:manual"]],
+    [["🧾 FINAL REVIEW","review"]],
+    [["🏠 MAIN MENU","menu"]]
+  ])});
 }
 
 async function introScreen(ctx:Ctx){
-  await show(ctx,"🚀 LAPrINT TRADE\n\nTrade qualified Solana tokens using your own trading rules.\n\nLAPrINT can find tokens that match your filters and either send them to you for approval or execute them automatically when your setup allows it.\n\nBefore using the bot, read and accept the bot terms.",{reply_markup:new InlineKeyboard().text("➡️ CONTINUE","onboarding:terms")});
+  const text=[
+    uiHeader("WELCOME","🚀"),
+    "",
+    "Trade qualified Solana tokens using your own rules.",
+    "",
+    uiSection("HOW LA-PRINT WORKS","💡"),
+    "",
+    "LA-PRINT finds tokens that match your configured filters and safety checks. You choose whether qualified calls are handled manually or automatically.",
+    "",
+    uiSection("BEFORE YOU START","📋"),
+    "",
+    "Review the bot terms, then create or import a trading wallet before configuring your strategy.",
+    "",
+    uiFooter()
+  ].join("\n");
+  await show(ctx,text,{parse_mode:"Markdown",reply_markup:uiKeyboard([
+    [["➡️ CONTINUE","onboarding:terms"]]
+  ])});
 }
 
 async function termsScreen(ctx:Ctx){
-  await show(ctx,"📜 Bot Terms & Conditions\n\nLAPrINT can interact with your Solana trading wallet and submit blockchain transactions when trading is enabled.\n\nTrading involves the risk of losing some or all of the SOL used in a trade. Token data can be incomplete or change quickly. A qualified call is not a guarantee of profit.\n\nYou are responsible for the wallet you create or import, the trading settings you choose, and the transactions you authorize through the bot.\n\nRead and understand these terms before continuing.",{reply_markup:new InlineKeyboard().text("📖 READ FULL TERMS","terms:full").row().text("✅ ACCEPT","terms:accept").text("❌ DECLINE","terms:decline").row().text("⬅️ BACK","onboarding:intro")});
+  const text=[
+    uiHeader("TERMS & CONDITIONS","📜"),
+    "",
+    "LA-PRINT can interact with your Solana trading wallet and submit blockchain transactions when trading is enabled.",
+    "",
+    uiSection("RISK NOTICE","⚠️"),
+    "",
+    "Trading involves the risk of losing some or all of the SOL used in a trade. Token data can be incomplete or change quickly. A qualified call is not a guarantee of profit.",
+    "",
+    "You are responsible for your wallet, trading settings and transactions authorized through the bot.",
+    "",
+    "Read the full terms before accepting.",
+    "",
+    uiFooter()
+  ].join("\n");
+  await show(ctx,text,{parse_mode:"Markdown",reply_markup:uiKeyboard([
+    [["📖 READ FULL TERMS","terms:full"]],
+    [["✅ ACCEPT","terms:accept"],["❌ DECLINE","terms:decline"]],
+    [["⬅️ BACK","onboarding:intro"],["🏠 MAIN MENU","menu"]]
+  ])});
 }
 
 async function walletOnboardingScreen(ctx:Ctx){
   ctx.session.onboardingWallet=true;
-  await show(ctx,"💰 Trading Wallet\n\nLAPrINT needs a trading wallet before you can configure trading.\n\nCreate a new Solana trading wallet or import an existing wallet.\n\nYour wallet is used for the trades you choose to execute.",{reply_markup:new InlineKeyboard().text("🆕 CREATE WALLET","mw:create").text("📥 IMPORT WALLET","mw:import").row().text("⬅️ BACK","onboarding:terms")});
+  const text=[
+    uiHeader("TRADING WALLET","👛"),
+    "",
+    "LA-PRINT needs a trading wallet before you can configure live trading.",
+    "",
+    uiSection("YOUR OPTIONS","🛠️"),
+    "",
+    "Create a new Solana trading wallet or import an existing wallet.",
+    "",
+    "The active wallet is used for trades you choose to execute.",
+    "",
+    "🔐 Keep your wallet credentials private and never share recovery information.",
+    "",
+    uiFooter()
+  ].join("\n");
+  await show(ctx,text,{parse_mode:"Markdown",reply_markup:uiKeyboard([
+    [["🆕 CREATE WALLET","mw:create"],["📥 IMPORT WALLET","mw:import"]],
+    [["⬅️ BACK","onboarding:terms"],["🏠 MAIN MENU","menu"]]
+  ])});
 }
 
 async function termsFull(ctx:Ctx){
@@ -588,7 +756,20 @@ bot.callbackQuery(/^call:approve:([1-9A-HJ-NP-Za-km-z]{32,44})$/,async ctx=>{
   if(r.missing.length)return show(ctx,"⚠️ *TRADE NOT EXECUTED*\\n\\n"+r.missing.map(x=>"❌ "+x).join("\\n")+"\\n\\nNo position was opened.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("⚙️ TRADE SETUP","setup").text("💰 WALLET","wallets").row().text("🏠 MAIN MENU","menu")});
   const live=process.env.ENGINE_MODE==="enabled"&&process.env.LIVE_TRADING==="true"&&process.env.LIVE_TRADING_ACK==="I_ACCEPT_REAL_SOLANA_TRANSACTIONS";
   if(!live)return show(ctx,"⚠️ *TRADE NOT EXECUTED*\\n\\nExecution is not enabled.\\n\\nNo position was opened.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("📊 VIEW DETAILS","call:details:"+ctx.match[1]).row().text("🏠 MAIN MENU","menu")});
-  try{const amount=Math.floor(Number(u.buy_amount)*LAMPORTS_PER_SOL);const result=await executeJupiterSwap({pool,telegramId:ctx.from!.id,inputMint:"So11111111111111111111111111111111111111112",outputMint:ctx.match[1],amountAtomic:String(amount),side:"buy"});const tokenRow=await getScannerToken(pool,ctx.from!.id,ctx.match[1]);const strategy={execution:{buyAmountSol:Number(u.buy_amount),stopLossPct:Number(u.sl_percent),takeProfit:u.tp_config?.targets||[],trailing:{enabled:false}}};await openVerifiedPosition(pool,ctx.from!.id,ctx.match[1],tokenRow?.symbol||"UNKNOWN",Number(u.buy_amount),result,strategy as any);return show(ctx,"🟢 *TRADE EXECUTED*\n\n`"+ctx.match[1]+"`\n\nEntry confirmed on-chain and position tracking started.\nBuy: "+u.buy_amount+" SOL.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("📡 ACTIVITY","activity").text("🏠 MAIN MENU","menu")});}catch(error){const reason=String((error as any)?.message||error).slice(0,300);await pool.query("INSERT INTO public.engine_events(telegram_id,event_type,token_address,details) VALUES($1,$2,$3,$4)",[ctx.from!.id,"execution_failed",ctx.match[1],{reason}]);return show(ctx,"⚠️ *TRADE NOT EXECUTED*\\n\\nReason:\\n"+reason+"\\n\\nNo position was opened.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔄 TRY AGAIN","call:approve:"+ctx.match[1]).text("🏠 MAIN MENU","menu")});}
+  try{
+    const strategy=Object.assign({},u.strategy_config||{}, {
+      execution:Object.assign({},(u.strategy_config||{}).execution||{}, {
+        buyAmountSol:Number(u.buy_amount),
+        maxBuyAmountSol:Number((u.strategy_config||{}).execution?.maxBuyAmountSol ?? u.buy_amount),
+        stopLossPct:Number(u.sl_percent),
+        takeProfit:u.tp_config?.targets||[],
+        dailySpendingLimitSol:(u.strategy_config||{}).execution?.dailySpendingLimitSol??null
+      })
+    });
+    const tokenRow=await getScannerToken(pool,ctx.from!.id,ctx.match[1]);
+    await executeQualifiedEntry(pool,bot,ctx.from!.id,ctx.match[1],tokenRow?.symbol||"UNKNOWN",strategy as any);
+    return show(ctx,"🟢 *TRADE EXECUTED*\\n\\n`"+ctx.match[1]+"`\\n\\nEntry confirmed on-chain and position tracking started.\\nBuy: "+u.buy_amount+" SOL.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("📡 ACTIVITY","activity").text("🏠 MAIN MENU","menu")});
+  }catch(error){const reason=String((error as any)?.message||error).slice(0,300);await pool.query("INSERT INTO public.engine_events(telegram_id,event_type,token_address,details) VALUES($1,$2,$3,$4)",[ctx.from!.id,"execution_failed",ctx.match[1],{reason}]);return show(ctx,"⚠️ *TRADE NOT EXECUTED*\\n\\nReason:\\n"+reason+"\\n\\nNo position was opened.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔄 TRY AGAIN","call:approve:"+ctx.match[1]).text("🏠 MAIN MENU","menu")});}
 });
 bot.callbackQuery("positions",async ctx=>{await ctx.answerCallbackQuery();const r=await pool.query("SELECT token_address,symbol,sol_spent,realized_pnl_sol,entry_price,remaining_amount,high_water_price,status,created_at FROM public.engine_positions WHERE telegram_id=$1 ORDER BY id DESC LIMIT 20",[ctx.from!.id]);if(!r.rowCount)return show(ctx,"📊 *POSITIONS*\n\nNo open or recorded positions yet.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔄 REFRESH","positions").text("🏠 MAIN MENU","menu")});const lines=r.rows.map((p:any)=>"• "+(p.symbol||"UNKNOWN")+"\n  "+p.status.toUpperCase()+" · Spent "+Number(p.sol_spent).toFixed(4)+" SOL\n  Realized PnL: "+Number(p.realized_pnl_sol).toFixed(6)+" SOL\n  CA: "+p.token_address);return show(ctx,"📊 *POSITIONS*\n\n"+lines.join("\n\n"),{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔄 REFRESH","positions").text("🏠 MAIN MENU","menu")});});
 bot.callbackQuery("activity",async ctx=>{await ctx.answerCallbackQuery();const r=await pool.query("SELECT event_type,token_address,details,created_at FROM public.engine_events WHERE telegram_id=$1 ORDER BY id DESC LIMIT 12",[ctx.from!.id]);const lines=r.rows.map((e:any)=>"• "+e.event_type+" · "+(e.token_address||"system")+"\n  "+new Date(e.created_at).toISOString()+"\n  "+JSON.stringify(e.details||{}).slice(0,220));return show(ctx,"📡 *ACTIVITY*\n\n"+(lines.length?lines.join("\n\n"):"No execution events yet."),{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔄 REFRESH","activity").text("🏠 MAIN MENU","menu")});});
@@ -637,6 +818,137 @@ bot.callbackQuery(/^scanner:token:([1-9A-HJ-NP-Za-km-z]{32,44})$/,async ctx=>{
   return show(ctx,text,{reply_markup:new InlineKeyboard().text("⬅️ DISCOVER","discover").text("🏠 MAIN MENU","menu")});
 });
 
+
+async function referralScreen(ctx:Ctx){
+  const text=[
+    uiHeader("REFERRALS","🎁"),
+    "",
+    "Invite friends to LA-PRINT and build your referral network.",
+    "",
+    uiSection("How it works","💡"),
+    "",
+    "Your personal referral link connects new users to your account. Referral activity and eligible rewards are tracked by LA-PRINT.",
+    "",
+    uiSection("Your referral status","📊"),
+    "",
+    "👥 Referrals       0",
+    "💰 Rewards         0 SOL",
+    "🏆 Rank            —",
+    "",
+    "Your referral link will appear here once the referral program is enabled for your account.",
+    "",
+    uiSection("Actions","🛠️"),
+    "",
+    "Use the buttons below to access your link, share it, or review your referral activity.",
+    "",
+    uiFooter()
+  ].join("\n");
+  const k=new InlineKeyboard().text("🔗 GET MY LINK","referral:link").text("📤 SHARE","referral:share").row()
+    .text("📊 MY STATS","referral:stats").text("ℹ️ HOW IT WORKS","referral:info").row()
+    .text("⬅️ BACK","menu").text("🏠 MAIN MENU","menu");
+  return show(ctx,text,{parse_mode:"Markdown",reply_markup:k});
+}
+async function helpScreen(ctx:Ctx){
+  const text=[
+    uiHeader("HELP & SUPPORT","❓"),
+    "",
+    "Need help with LA-PRINT? Start with the topic that matches what you are trying to do.",
+    "",
+    uiSection("Support areas","📚"),
+    "",
+    "🚀 Trading — understand Manual and Autopilot execution.",
+    "👛 Wallet — create, import, switch and fund a trading wallet.",
+    "🎯 Strategy — configure entries, risk, TP and SL.",
+    "📈 Positions — understand open positions and lifecycle updates.",
+    "",
+    "If the built-in guides do not answer your question, use Contact Support to reach the support channel.",
+    "",
+    uiFooter()
+  ].join("\n");
+  const k=new InlineKeyboard().text("🚀 TRADING GUIDE","help:trading").text("👛 WALLET HELP","help:wallet").row()
+    .text("🎯 STRATEGY HELP","help:strategy").text("📈 POSITION HELP","help:positions").row()
+    .text("💬 CONTACT SUPPORT","help:contact").text("🐛 REPORT A PROBLEM","help:report").row()
+    .text("📚 DOCUMENTATION","docs").text("🏠 MAIN MENU","menu");
+  return show(ctx,text,{parse_mode:"Markdown",reply_markup:k});
+}
+async function docsScreen(ctx:Ctx){
+  const text=[
+    uiHeader("DOCUMENTATION","📚"),
+    "",
+    "Learn how LA-PRINT works before enabling live trading.",
+    "",
+    uiSection("Guides","📖"),
+    "",
+    "🚀 Getting Started — onboarding, wallet and first setup.",
+    "🤖 Autopilot — how qualified calls move through execution.",
+    "✋ Manual Trading — review and approve calls yourself.",
+    "🎯 Strategy & Risk — buy size, TP, SL and limits.",
+    "👛 Wallets — wallet management and funding.",
+    "",
+    "Use the guide buttons below to open the relevant explanation.",
+    "",
+    uiFooter()
+  ].join("\n");
+  const k=new InlineKeyboard().text("🚀 GETTING STARTED","docs:start").text("🤖 AUTOPILOT","docs:auto").row()
+    .text("✋ MANUAL","docs:manual").text("🎯 STRATEGY & RISK","docs:risk").row()
+    .text("👛 WALLETS","docs:wallets").text("🏠 MAIN MENU","menu");
+  return show(ctx,text,{parse_mode:"Markdown",reply_markup:k});
+}
+async function leaderboardScreen(ctx:Ctx){
+  const text=[
+    uiHeader("LEADERBOARD","🏆"),
+    "",
+    "See how traders are performing across the LA-PRINT community.",
+    "",
+    uiSection("Leaderboard","📊"),
+    "",
+    "🥇 #1   Coming soon",
+    "🥈 #2   Coming soon",
+    "🥉 #3   Coming soon",
+    "",
+    "The leaderboard will display verified trading performance once the community ranking system is enabled.",
+    "",
+    uiSection("Your standing","👤"),
+    "",
+    "🏅 Rank            —",
+    "📈 Realized PnL     —",
+    "🔥 Trades          —",
+    "",
+    uiFooter()
+  ].join("\n");
+  return show(ctx,text,{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔄 REFRESH","leaderboard").row().text("⬅️ BACK","menu").text("🏠 MAIN MENU","menu")});
+}
+bot.callbackQuery("referral",async ctx=>{await ctx.answerCallbackQuery();return referralScreen(ctx);});
+bot.callbackQuery("referral:link",async ctx=>{await ctx.answerCallbackQuery("Referral link is not enabled yet");return referralScreen(ctx);});
+bot.callbackQuery("referral:share",async ctx=>{await ctx.answerCallbackQuery("Referral sharing is not enabled yet");return referralScreen(ctx);});
+bot.callbackQuery("referral:stats",async ctx=>{await ctx.answerCallbackQuery();return referralScreen(ctx);});
+bot.callbackQuery("referral:info",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,[uiHeader("REFERRAL PROGRAM","🎁"),"","The referral program is designed to reward users who bring new traders to LA-PRINT.","","Referral eligibility, attribution and rewards are recorded by the platform. Exact reward rules will be shown here when the program is active.","",uiFooter()].join("\n"),{parse_mode:"Markdown",reply_markup:navigationKeyboard("referral")});});
+bot.callbackQuery("leaderboard",async ctx=>{await ctx.answerCallbackQuery();return leaderboardScreen(ctx);});
+bot.callbackQuery("help",async ctx=>{await ctx.answerCallbackQuery();return helpScreen(ctx);});
+bot.callbackQuery("docs",async ctx=>{await ctx.answerCallbackQuery();return docsScreen(ctx);});
+bot.callbackQuery(/^help:(trading|wallet|strategy|positions)$/,async ctx=>{
+  await ctx.answerCallbackQuery();
+  const titles:{[key:string]:string}={trading:"TRADING GUIDE",wallet:"WALLET GUIDE",strategy:"STRATEGY GUIDE",positions:"POSITION GUIDE"};
+  const body:{[key:string]:string}={
+    trading:"LA-PRINT first evaluates a token against your configured rules. In Manual mode you review qualified calls before approval. In Autopilot mode qualifying calls can proceed automatically when all safety gates are satisfied.",
+    wallet:"Your active wallet is the wallet used for new trades. Keep enough SOL available for the trade amount plus network fees. Refresh the balance whenever you fund the wallet.",
+    strategy:"Your strategy controls entry size, maximum exposure, stop loss, take profit, position limits and other risk rules. Changes affect future entries.",
+    positions:"Positions are monitored after entry. LA-PRINT can report take-profit milestones, stop-loss events, trailing exits and final closure as the position changes."
+  };
+  return show(ctx,[uiHeader(titles[ctx.match[1]],"📖"),"",body[ctx.match[1]],"","Use the buttons below to return to Help or the main menu.","",uiFooter()].join("\n"),{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("❓ HELP","help").text("📚 DOCS","docs").row().text("🏠 MAIN MENU","menu")});
+});
+bot.callbackQuery(/^docs:(start|auto|manual|risk|wallets)$/,async ctx=>{
+  await ctx.answerCallbackQuery();
+  const titles:{[key:string]:string}={start:"GETTING STARTED",auto:"AUTOPILOT",manual:"MANUAL TRADING",risk:"STRATEGY & RISK",wallets:"WALLETS"};
+  const body:{[key:string]:string}={
+    start:"Complete onboarding, accept the terms, create or import a wallet, configure your strategy, then review the setup before starting trading.",
+    auto:"Autopilot watches for qualified calls and can execute according to your saved strategy when live execution is explicitly enabled.",
+    manual:"Manual mode sends qualified calls to you first. Review the market and security information, then approve or reject the call.",
+    risk:"Buy amount, stop loss, take-profit targets, maximum open positions and daily spending limits work together to control exposure.",
+    wallets:"Manage the active trading wallet from Wallet. Fund it with SOL, refresh its RPC balance, and switch wallets when needed."
+  };
+  return show(ctx,[uiHeader(titles[ctx.match[1]],"📚"),"",body[ctx.match[1]],"","These guides explain the intended behavior; always review your configured values before enabling live execution.","",uiFooter()].join("\n"),{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("📚 DOCS","docs").text("❓ HELP","help").row().text("🏠 MAIN MENU","menu")});
+});
 bot.on("message:text",async ctx=>{
   if(!ctx.session.input)return;
   const raw=ctx.message.text.trim();
@@ -685,7 +997,7 @@ await init();
 await databaseSmokeTest();
 await bot.api.setMyCommands([{command:"start",description:"Open LaPrint"},{command:"menu",description:"Main menu"},{command:"setup",description:"Trade Autopilot setup"},{command:"strategy",description:"Advanced strategy settings"},{command:"mode",description:"Switch mode"},{command:"wallets",description:"Manage trading wallets"}]);
 console.log("LaPrint V2 starting. ENGINE_MODE="+(process.env.ENGINE_MODE||"disabled"));
-const stopEngine = startEngine(pool,bot);
+const stopEngine = await startEngine(pool,bot);
 const pollingClient = await acquireTelegramPollingLock();
 let shuttingDown = false;
 const shutdown = async (signal: string) => {
