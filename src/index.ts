@@ -255,33 +255,46 @@ const mainKb = (active:boolean,mode:string) => {
   return k;
 };
 
-const buyKb=()=>new InlineKeyboard()
-  .text("0.01 SOL","buy:0.01").text("0.05 SOL","buy:0.05").row()
-  .text("0.10 SOL","buy:0.10").text("0.25 SOL","buy:0.25").row()
-  .text("✏️ CUSTOM","buy:custom").row().text("⬅️ BACK","setup");
+const buyKb=()=>uiKeyboard([
+  [["0.01 SOL","buy:0.01"],["0.05 SOL","buy:0.05"]],
+  [["0.10 SOL","buy:0.10"],["0.25 SOL","buy:0.25"]],
+  [["✏️ CUSTOM AMOUNT","buy:custom"]],
+  [["⬅️ BACK","setup"],["🏠 MAIN MENU","menu"]]
+]);
 
-const tpKb=()=>new InlineKeyboard()
-  .text("⚡ SIMPLE TP","tp:simple").text("🧠 PARTIAL EXITS","tp:partial").row()
-  .text("⬅️ BACK","setup");
+const tpKb=()=>uiKeyboard([
+  [["⚡ SIMPLE TP","tp:simple"],["🧠 PARTIAL EXITS","tp:partial"]],
+  [["⬅️ BACK","setup"],["🏠 MAIN MENU","menu"]]
+]);
 
-const slKb=()=>new InlineKeyboard()
-  .text("-10%","sl:-10").text("-15%","sl:-15").row()
-  .text("-20%","sl:-20").text("-25%","sl:-25").row()
-  .text("✏️ CUSTOM","sl:custom").row().text("⬅️ BACK","setup");
+const slKb=()=>uiKeyboard([
+  [["-10%","sl:-10"],["-15%","sl:-15"]],
+  [["-20%","sl:-20"],["-25%","sl:-25"]],
+  [["✏️ CUSTOM STOP LOSS","sl:custom"]],
+  [["⬅️ BACK","setup"],["🏠 MAIN MENU","menu"]]
+]);
 
-const filterKb=()=>new InlineKeyboard()
-  .text("🟢 PRE-BOND","filter:pre").text("🚀 NEW LAUNCHES","filter:new").row()
-  .text("🔥 BOTH","filter:both").row()
-  .text("⚙️ FILTER SETTINGS","filter:settings").text("🧠 SMART FILTERS","filter:smart").row()
-  .text("⬅️ BACK","setup");
+const filterKb=()=>uiKeyboard([
+  [["🟢 PRE-BOND","filter:pre"],["🚀 NEW LAUNCHES","filter:new"]],
+  [["🔥 BOTH","filter:both"]],
+  [["⚙️ FILTER SETTINGS","filter:settings"],["🧠 SMART FILTERS","filter:smart"]],
+  [["⬅️ BACK","setup"],["🏠 MAIN MENU","menu"]]
+]);
 
-const walletKb=(target="menu")=>new InlineKeyboard().text("➕ CREATE WALLET","mw:create").text("📥 IMPORT WALLET","mw:import").row().text("🔄 REFRESH","wallets:refresh").row().text("⬅️ BACK",target).text("🏠 MAIN MENU","menu");
-const alertKb=(a:any={})=>new InlineKeyboard()
-  .text("🟢 MILESTONES: ALWAYS ON","noop").row()
-  .text((a.newToken?"☑":"☐")+" NEW TOKEN","alert:new").text((a.liquidity?"☑":"☐")+" LIQUIDITY","alert:liq").row()
-  .text((a.volume?"☑":"☐")+" VOLUME","alert:vol").text((a.bonding?"☑":"☐")+" BONDING","alert:bond").row()
-  .text((a.watchlist?"☑":"☐")+" WATCHLIST","alert:watch").row()
-  .text("💾 SAVE ALERTS","alert:save").row().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu");
+const walletKb=(target="menu")=>uiKeyboard([
+  [["➕ CREATE WALLET","mw:create"],["📥 IMPORT WALLET","mw:import"]],
+  [["🔄 REFRESH BALANCE","wallets:refresh"]],
+  [["⬅️ BACK",target],["🏠 MAIN MENU","menu"]]
+]);
+
+const alertKb=(a:any={})=>uiKeyboard([
+  [["🟢 MILESTONES: ALWAYS ON","noop"]],
+  [[(a.newToken?"☑":"☐")+" NEW TOKEN","alert:new"],[(a.liquidity?"☑":"☐")+" LIQUIDITY","alert:liq"]],
+  [[(a.volume?"☑":"☐")+" VOLUME","alert:vol"],[(a.bonding?"☑":"☐")+" BONDING","alert:bond"]],
+  [[(a.watchlist?"☑":"☐")+" WATCHLIST","alert:watch"]],
+  [["💾 SAVE ALERTS","alert:save"]],
+  [["⬅️ BACK","setup"],["🏠 MAIN MENU","menu"]]
+]);
 
 async function menu(ctx:Ctx){
   const u=await user(ctx.from!.id,ctx.from!.username);
@@ -389,16 +402,70 @@ async function setupDetails(ctx:Ctx){
 }
 
 async function introScreen(ctx:Ctx){
-  await show(ctx,"🚀 LAPrINT TRADE\n\nTrade qualified Solana tokens using your own trading rules.\n\nLAPrINT can find tokens that match your filters and either send them to you for approval or execute them automatically when your setup allows it.\n\nBefore using the bot, read and accept the bot terms.",{reply_markup:new InlineKeyboard().text("➡️ CONTINUE","onboarding:terms")});
+  const text=[
+    uiHeader("WELCOME","🚀"),
+    "",
+    "Trade qualified Solana tokens using your own rules.",
+    "",
+    uiSection("HOW LA-PRINT WORKS","💡"),
+    "",
+    "LA-PRINT finds tokens that match your configured filters and safety checks. You choose whether qualified calls are handled manually or automatically.",
+    "",
+    uiSection("BEFORE YOU START","📋"),
+    "",
+    "Review the bot terms, then create or import a trading wallet before configuring your strategy.",
+    "",
+    uiFooter()
+  ].join("\n");
+  await show(ctx,text,{parse_mode:"Markdown",reply_markup:uiKeyboard([
+    [["➡️ CONTINUE","onboarding:terms"]]
+  ])});
 }
 
 async function termsScreen(ctx:Ctx){
-  await show(ctx,"📜 Bot Terms & Conditions\n\nLAPrINT can interact with your Solana trading wallet and submit blockchain transactions when trading is enabled.\n\nTrading involves the risk of losing some or all of the SOL used in a trade. Token data can be incomplete or change quickly. A qualified call is not a guarantee of profit.\n\nYou are responsible for the wallet you create or import, the trading settings you choose, and the transactions you authorize through the bot.\n\nRead and understand these terms before continuing.",{reply_markup:new InlineKeyboard().text("📖 READ FULL TERMS","terms:full").row().text("✅ ACCEPT","terms:accept").text("❌ DECLINE","terms:decline").row().text("⬅️ BACK","onboarding:intro")});
+  const text=[
+    uiHeader("TERMS & CONDITIONS","📜"),
+    "",
+    "LA-PRINT can interact with your Solana trading wallet and submit blockchain transactions when trading is enabled.",
+    "",
+    uiSection("RISK NOTICE","⚠️"),
+    "",
+    "Trading involves the risk of losing some or all of the SOL used in a trade. Token data can be incomplete or change quickly. A qualified call is not a guarantee of profit.",
+    "",
+    "You are responsible for your wallet, trading settings and transactions authorized through the bot.",
+    "",
+    "Read the full terms before accepting.",
+    "",
+    uiFooter()
+  ].join("\n");
+  await show(ctx,text,{parse_mode:"Markdown",reply_markup:uiKeyboard([
+    [["📖 READ FULL TERMS","terms:full"]],
+    [["✅ ACCEPT","terms:accept"],["❌ DECLINE","terms:decline"]],
+    [["⬅️ BACK","onboarding:intro"],["🏠 MAIN MENU","menu"]]
+  ])});
 }
 
 async function walletOnboardingScreen(ctx:Ctx){
   ctx.session.onboardingWallet=true;
-  await show(ctx,"💰 Trading Wallet\n\nLAPrINT needs a trading wallet before you can configure trading.\n\nCreate a new Solana trading wallet or import an existing wallet.\n\nYour wallet is used for the trades you choose to execute.",{reply_markup:new InlineKeyboard().text("🆕 CREATE WALLET","mw:create").text("📥 IMPORT WALLET","mw:import").row().text("⬅️ BACK","onboarding:terms")});
+  const text=[
+    uiHeader("TRADING WALLET","👛"),
+    "",
+    "LA-PRINT needs a trading wallet before you can configure live trading.",
+    "",
+    uiSection("YOUR OPTIONS","🛠️"),
+    "",
+    "Create a new Solana trading wallet or import an existing wallet.",
+    "",
+    "The active wallet is used for trades you choose to execute.",
+    "",
+    "🔐 Keep your wallet credentials private and never share recovery information.",
+    "",
+    uiFooter()
+  ].join("\n");
+  await show(ctx,text,{parse_mode:"Markdown",reply_markup:uiKeyboard([
+    [["🆕 CREATE WALLET","mw:create"],["📥 IMPORT WALLET","mw:import"]],
+    [["⬅️ BACK","onboarding:terms"],["🏠 MAIN MENU","menu"]]
+  ])});
 }
 
 async function termsFull(ctx:Ctx){
