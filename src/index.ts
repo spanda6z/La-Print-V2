@@ -8,7 +8,7 @@ import { notifyAdmin } from "./admin-notifications.js";
 import { registerAdminConsole, recordAdminEvent } from "./admin-console.js";
 import { registerStrategySettings } from "./settings-v2.js";
 import { registerMultiWallets, ensureMultiWalletSchema } from "./multi-wallets.js";
-import { ensureEngineSchema, startEngine, getScannerView, getScannerToken, executeJupiterSwap, openVerifiedPosition, executeQualifiedEntry } from "./engine.js";
+import { ensureEngineSchema, startEngine, getScannerView, getScannerToken, executeQualifiedEntry } from "./engine.js";
 
 const { Pool } = pg;
 const token = process.env.BOT_TOKEN ?? process.env.TELEGRAM_BOT_TOKEN;
