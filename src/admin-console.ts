@@ -62,7 +62,8 @@ export async function recordAdminEvent(pool: any, eventType: string, data: Recor
 }
 
 async function isAdmin(id: number) {
-  return getAdminIds().includes(id);
+  const adminIds = getAdminIds();
+  return adminIds.some(adminId => Number.isSafeInteger(adminId) && adminId === Number(id));
 }
 
 function homeKeyboard() {
@@ -149,11 +150,28 @@ export function registerAdminConsole(deps: AdminDeps) {
   const { bot, pool, show } = deps;
 
   bot.command("admin", async (ctx: any) => {
-    if (!(await isAdmin(ctx.from.id))) return;
-    await ensureAdminAuditTable(pool);
-    await show(ctx, "🛡️ *LA-PRINT ADMIN*\n\nManual control center for the bot. Choose an operation.", {
-      parse_mode: "Markdown", reply_markup: homeKeyboard()
-    });
+    if (!(await isAdmin(ctx.from.id))) {
+      await ctx.reply(
+        "⛔ *ADMIN ACCESS DENIED*\n\n" +
+        "Your Telegram ID is not configured as an admin.\n\n" +
+        "Telegram ID: `" + ctx.from.id + "`\n\n" +
+        "Add this ID to ADMIN_TELEGRAM_ID or ADMIN_TELEGRAM_IDS in Railway, then restart the bot.",
+        { parse_mode: "Markdown" }
+      ).catch(() => {});
+      return;
+    }
+    try {
+      await ensureAdminAuditTable(pool);
+      await show(ctx, "🛡️ *LA-PRINT ADMIN*\n\nManual control center for the bot. Choose an operation.", {
+        parse_mode: "Markdown", reply_markup: homeKeyboard()
+      });
+    } catch (error) {
+      console.error("[admin] open failed", error);
+      await ctx.reply(
+        "⚠️ *ADMIN PANEL ERROR*\n\nThe bot is running, but the admin panel could not load.\n\nCheck the Railway deployment logs.",
+        { parse_mode: "Markdown" }
+      ).catch(() => {});
+    }
   });
 
   bot.callbackQuery(/^admin:/, async (ctx: any) => {
