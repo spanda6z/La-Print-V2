@@ -4,7 +4,7 @@ import pg from "pg";
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 import bs58 from "bs58";
-import { notifyAdmin } from "./admin-notifications.js";
+import { notifyAdmin, getAdminIds } from "./admin-notifications.js";
 import { registerAdminConsole, recordAdminEvent } from "./admin-console.js";
 import { registerStrategySettings } from "./settings-v2.js";
 import { registerMultiWallets, ensureMultiWalletSchema } from "./multi-wallets.js";
@@ -35,6 +35,23 @@ async function show(ctx: Ctx, message: string, extra: any = {}) {
   return ctx.reply(message, extra);
 }
 bot.use(session({ initial: (): Session => ({}) }));
+bot.use(async (ctx: Ctx, next) => {
+  const id = ctx.from?.id;
+  if (!id) return next();
+  const admins = getAdminIds();
+  if (admins.includes(id)) return next();
+  try {
+    const r = await pool.query("SELECT COALESCE(admin_blocked,FALSE) AS admin_blocked FROM public.users WHERE telegram_id=$1", [id]);
+    if (r.rows[0]?.admin_blocked) {
+      if (ctx.callbackQuery) await ctx.answerCallbackQuery("Account disabled").catch(() => {});
+      else await ctx.reply("🚫 Your LA-PRINT account is currently disabled. Contact support if you believe this is a mistake.");
+      return;
+    }
+  } catch (error) {
+    console.error("[admin] account-status check failed", error);
+  }
+  return next();
+});
 
 async function init() {
   await pool.query(`
@@ -67,6 +84,7 @@ async function init() {
     ALTER TABLE public.users ADD COLUMN IF NOT EXISTS strategy_config JSONB;
     ALTER TABLE public.users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
     ALTER TABLE public.users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS admin_blocked BOOLEAN NOT NULL DEFAULT FALSE;
     CREATE UNIQUE INDEX IF NOT EXISTS users_telegram_id_uidx ON public.users(telegram_id);
     CREATE TABLE IF NOT EXISTS public.wallets (
       telegram_id BIGINT PRIMARY KEY REFERENCES public.users(telegram_id) ON DELETE CASCADE,
@@ -995,7 +1013,7 @@ registerStrategySettings({ bot, pool, show, user, patch });
 bot.catch(e=>console.error("BOT_ERROR",e.error));
 await init();
 await databaseSmokeTest();
-await bot.api.setMyCommands([{command:"start",description:"Open LaPrint"},{command:"menu",description:"Main menu"},{command:"setup",description:"Trade Autopilot setup"},{command:"strategy",description:"Advanced strategy settings"},{command:"mode",description:"Switch mode"},{command:"wallets",description:"Manage trading wallets"}]);
+await bot.api.setMyCommands([{command:"start",description:"Open LaPrint"},{command:"menu",description:"Main menu"},{command:"setup",description:"Trade Autopilot setup"},{command:"strategy",description:"Advanced strategy settings"},{command:"mode",description:"Switch mode"},{command:"wallets",description:"Manage trading wallets"},{command:"admin",description:"Open admin control center"}]);
 console.log("LaPrint V2 starting. ENGINE_MODE="+(process.env.ENGINE_MODE||"disabled"));
 const stopEngine = await startEngine(pool,bot);
 const pollingClient = await acquireTelegramPollingLock();
