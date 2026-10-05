@@ -191,6 +191,13 @@ async function saveWallet(telegramId: number, keypair: Keypair) {
   );
   const saved = await pool.query("SELECT public_key FROM public.wallets WHERE telegram_id=$1",[telegramId]);
   if (saved.rows[0]?.public_key !== address) throw new Error("A wallet already exists; it was not replaced.");
+  await pool.query(
+    `INSERT INTO public.trading_wallets(telegram_id,name,public_key,encrypted_secret,encryption_iv,encryption_tag,is_active)
+     VALUES($1,$2,$3,$4,$5,$6,TRUE)
+     ON CONFLICT(public_key) DO UPDATE SET is_active=TRUE,updated_at=NOW()`,
+    [telegramId,"Primary",address,secret.encrypted,secret.iv,secret.tag]
+  );
+  await pool.query("UPDATE public.trading_wallets SET is_active=FALSE,updated_at=NOW() WHERE telegram_id=$1 AND public_key<>$2",[telegramId,address]);
   await patch(telegramId,{wallet_address:address,wallet_balance:0});
   return address;
 }
