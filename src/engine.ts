@@ -346,12 +346,13 @@ export async function executeQualifiedEntry(pool:Pool,bot:BotLike,telegramId:num
   if(dailyLimit!=null){
     const spent=await pool.query(`
       SELECT (
-        COALESCE((SELECT SUM((details->>'inputAmount')::numeric)
-          FROM public.engine_events
-          WHERE telegram_id=$1 AND event_type='swap_confirmed' AND details->>'side'='buy' AND created_at>=CURRENT_DATE),0)
-        + COALESCE((SELECT SUM(amount_atomic)
+        COALESCE((SELECT SUM(amount_atomic)
           FROM public.trade_intents
           WHERE telegram_id=$1 AND side='buy' AND status IN ('created','broadcast','confirmed') AND created_at>=CURRENT_DATE),0)
+        + COALESCE((SELECT SUM((details->>'inputAmount')::numeric)
+          FROM public.engine_events
+          WHERE telegram_id=$1 AND event_type='swap_confirmed' AND details->>'side'='buy'
+            AND details->>'intentId' IS NULL AND created_at>=CURRENT_DATE),0)
       )::numeric AS atomic
     `,[telegramId]);
     const spentSol=Number(spent.rows[0]?.atomic||0)/LAMPORTS_PER_SOL;
