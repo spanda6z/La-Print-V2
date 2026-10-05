@@ -109,6 +109,16 @@ async function init() {
       created_at TIMESTAMPTZ DEFAULT NOW(),
       PRIMARY KEY (telegram_id, event_key)
     );
+    CREATE TABLE IF NOT EXISTS public.referrals (
+      id BIGSERIAL PRIMARY KEY,
+      referrer_telegram_id BIGINT NOT NULL REFERENCES public.users(telegram_id) ON DELETE CASCADE,
+      referred_telegram_id BIGINT NOT NULL UNIQUE REFERENCES public.users(telegram_id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'active',
+      reward_sol NUMERIC NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS referrals_referrer_created_idx
+      ON public.referrals(referrer_telegram_id, created_at DESC);
   `);
   const check = await pool.query(`
     SELECT current_database() AS database, current_schema() AS schema,
@@ -455,6 +465,25 @@ async function setupDetails(ctx:Ctx){
   ])});
 }
 
+async function referralLink(ctx:Ctx){
+  const me=await bot.api.getMe();
+  return "https://t.me/"+me.username+"?start=ref_"+ctx.from!.id;
+}
+async function recordReferral(referrerId:number,referredId:number){
+  if(referrerId===referredId)return false;
+  const u=await pool.query("SELECT telegram_id FROM public.users WHERE telegram_id=$1",[referredId]);
+  if(!u.rowCount)return false;
+  const existing=await pool.query("SELECT id FROM public.referrals WHERE referred_telegram_id=$1",[referredId]);
+  if(existing.rowCount)return false;
+  const referrer=await pool.query("SELECT telegram_id FROM public.users WHERE telegram_id=$1",[referrerId]);
+  if(!referrer.rowCount)return false;
+  const inserted=await pool.query(
+    "INSERT INTO public.referrals(referrer_telegram_id,referred_telegram_id) VALUES($1,$2) ON CONFLICT(referred_telegram_id) DO NOTHING",
+    [referrerId,referredId]
+  );
+  return inserted.rowCount===1;
+}
+
 async function introScreen(ctx:Ctx){
   const text=[
     uiHeader("WELCOME","🚀"),
@@ -478,17 +507,20 @@ async function introScreen(ctx:Ctx){
 
 async function termsScreen(ctx:Ctx){
   const text=[
-    uiHeader("TERMS & CONDITIONS","📜"),
+    uiHeader("ALPHATRADE RULES","📜"),
     "",
-    "LA-PRINT can interact with your Solana trading wallet and submit blockchain transactions when trading is enabled.",
+    "Crypto trading can cause total loss. AlphaTrade does not guarantee profit.",
     "",
-    uiSection("RISK NOTICE","⚠️"),
+    "• You are responsible for confirmed trades.",
+    "• Execution depends on fees, slippage, liquidity and network conditions.",
+    "• Safety checks reduce risk but cannot eliminate it.",
+    "• Use a dedicated trading wallet.",
+    "• Never share a seed phrase or private key.",
+    "• Verify withdrawal addresses and transactions on-chain.",
+    "• Automated trading can execute without a final manual confirmation after you enable it.",
+    "• Emergency controls pause automation but do not reverse blockchain transactions.",
     "",
-    "Trading involves the risk of losing some or all of the SOL used in a trade. Token data can be incomplete or change quickly. A qualified call is not a guarantee of profit.",
-    "",
-    "You are responsible for your wallet, trading settings and transactions authorized through the bot.",
-    "",
-    "Read the full terms before accepting.",
+    "Read and accept these rules before continuing.",
     "",
     uiFooter()
   ].join("\n");
@@ -523,11 +555,37 @@ async function walletOnboardingScreen(ctx:Ctx){
 }
 
 async function termsFull(ctx:Ctx){
-  await show(ctx,"📖 Full Bot Terms\n\nBy using LAPrINT, you acknowledge that cryptocurrency trading is high risk and that blockchain transactions may be irreversible.\n\nYou are responsible for protecting your wallet credentials and choosing your trading settings. Never share your private key or recovery information with another person.\n\nLAPrINT does not guarantee that a token will increase in value, that an execution will succeed, or that a configured strategy will be profitable. Market data may be delayed, incomplete or unavailable.\n\nYou may stop automated trading at any time. Stopping new entries does not automatically close existing positions.\n\nIf you do not agree to these terms, do not use the trading features.",{reply_markup:new InlineKeyboard().text("⬅️ BACK TO TERMS","onboarding:terms")});
+  const text=[
+    uiHeader("ALPHATRADE RULES","📜"),
+    "",
+    "Crypto trading can cause total loss. AlphaTrade does not guarantee profit.",
+    "",
+    "• You are responsible for confirmed trades.",
+    "• Execution depends on fees, slippage, liquidity and network conditions.",
+    "• Safety checks reduce risk but cannot eliminate it.",
+    "• Use a dedicated trading wallet.",
+    "• Never share a seed phrase or private key.",
+    "• Verify withdrawal addresses and transactions on-chain.",
+    "• Automated trading can execute without a final manual confirmation after you enable it.",
+    "• Emergency controls pause automation but do not reverse blockchain transactions.",
+    "",
+    "If you agree, return and accept the rules to continue."
+  ].join("\n");
+  return show(ctx,text,{parse_mode:"Markdown",reply_markup:uiKeyboard([
+    [["⬅️ BACK TO RULES","onboarding:terms"]],
+    [["🏠 MAIN MENU","menu"]]
+  ])});
 }
 
 bot.command("start", async ctx => {
   const u=await user(ctx.from!.id,ctx.from!.username);
+  const payload=typeof ctx.match==="string"?ctx.match.trim():"";
+  if(payload.startsWith("ref_")){
+    const referrerId=Number(payload.slice(4));
+    if(Number.isSafeInteger(referrerId) && referrerId>0){
+      try { await recordReferral(referrerId,ctx.from!.id); } catch(error) { console.error("[referral] attribution failed",error); }
+    }
+  }
   if(u.onboarding_complete) return menu(ctx);
   if(!u.terms_accepted) return introScreen(ctx);
   const wallet=await pool.query("SELECT id FROM public.trading_wallets WHERE telegram_id=$1 AND is_active=TRUE",[ctx.from!.id]);
@@ -838,34 +896,39 @@ bot.callbackQuery(/^scanner:token:([1-9A-HJ-NP-Za-km-z]{32,44})$/,async ctx=>{
 
 
 async function referralScreen(ctx:Ctx){
+  const r=await pool.query(
+    "SELECT COUNT(*)::int AS referrals, COALESCE(SUM(reward_sol),0) AS rewards FROM public.referrals WHERE referrer_telegram_id=$1 AND status='active'",
+    [ctx.from!.id]
+  );
+  const stats=r.rows[0]||{referrals:0,rewards:0};
+  const link=await referralLink(ctx);
   const text=[
     uiHeader("REFERRALS","🎁"),
     "",
-    "Invite friends to LA-PRINT and build your referral network.",
+    "Invite friends to AlphaTrade and earn eligible referral rewards.",
     "",
-    uiSection("How it works","💡"),
+    uiSection("YOUR REFERRAL STATUS","📊"),
     "",
-    "Your personal referral link connects new users to your account. Referral activity and eligible rewards are tracked by LA-PRINT.",
+    "👥 Referrals       "+Number(stats.referrals||0),
+    "💰 Rewards         "+Number(stats.rewards||0).toFixed(4)+" SOL",
     "",
-    uiSection("Your referral status","📊"),
+    uiSection("YOUR LINK","🔗"),
     "",
-    "👥 Referrals       0",
-    "💰 Rewards         0 SOL",
-    "🏆 Rank            —",
+    "`"+link+"`",
     "",
-    "Your referral link will appear here once the referral program is enabled for your account.",
-    "",
-    uiSection("Actions","🛠️"),
-    "",
-    "Use the buttons below to access your link, share it, or review your referral activity.",
+    "Share this link with a new user. Attribution is recorded when they start the bot with your referral link.",
     "",
     uiFooter()
   ].join("\n");
-  const k=new InlineKeyboard().text("🔗 GET MY LINK","referral:link").text("📤 SHARE","referral:share").row()
-    .text("📊 MY STATS","referral:stats").text("ℹ️ HOW IT WORKS","referral:info").row()
-    .text("⬅️ BACK","menu").text("🏠 MAIN MENU","menu");
+  const k=uiKeyboard([
+    [["🔗 GET MY REFERRAL LINK","referral:link"]],
+    [["📤 SHARE WITH FRIENDS","referral:share"]],
+    [["📊 VIEW MY STATS","referral:stats"],["ℹ️ HOW IT WORKS","referral:info"]],
+    [["⬅️ BACK","menu"],["🏠 MAIN MENU","menu"]]
+  ]);
   return show(ctx,text,{parse_mode:"Markdown",reply_markup:k});
 }
+
 async function helpScreen(ctx:Ctx){
   const text=[
     uiHeader("HELP & SUPPORT","❓"),
@@ -937,8 +1000,16 @@ async function leaderboardScreen(ctx:Ctx){
   return show(ctx,text,{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔄 REFRESH","leaderboard").row().text("⬅️ BACK","menu").text("🏠 MAIN MENU","menu")});
 }
 bot.callbackQuery("referral",async ctx=>{await ctx.answerCallbackQuery();return referralScreen(ctx);});
-bot.callbackQuery("referral:link",async ctx=>{await ctx.answerCallbackQuery("Referral link is not enabled yet");return referralScreen(ctx);});
-bot.callbackQuery("referral:share",async ctx=>{await ctx.answerCallbackQuery("Referral sharing is not enabled yet");return referralScreen(ctx);});
+bot.callbackQuery("referral:link",async ctx=>{
+  await ctx.answerCallbackQuery("Referral link ready");
+  const link=await referralLink(ctx);
+  return show(ctx,[uiHeader("YOUR REFERRAL LINK","🔗"),"","Share this link with a new user:", "", "`"+link+"`","","When they start AlphaTrade from this link, the referral is attributed to you.","",uiFooter()].join("\n"),{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("📤 SHARE WITH FRIENDS","referral:share").row().text("⬅️ BACK","referral").text("🏠 MAIN MENU","menu")});
+});
+bot.callbackQuery("referral:share",async ctx=>{
+  await ctx.answerCallbackQuery("Referral link ready");
+  const link=await referralLink(ctx);
+  return show(ctx,"🎁 *SHARE ALPHATRADE*\n\nInvite a friend to AlphaTrade:\n\n"+link+"\n\nSend this message to your friend in Telegram.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔗 VIEW MY LINK","referral:link").row().text("⬅️ BACK","referral").text("🏠 MAIN MENU","menu")});
+});
 bot.callbackQuery("referral:stats",async ctx=>{await ctx.answerCallbackQuery();return referralScreen(ctx);});
 bot.callbackQuery("referral:info",async ctx=>{await ctx.answerCallbackQuery();return show(ctx,[uiHeader("REFERRAL PROGRAM","🎁"),"","The referral program is designed to reward users who bring new traders to LA-PRINT.","","Referral eligibility, attribution and rewards are recorded by the platform. Exact reward rules will be shown here when the program is active.","",uiFooter()].join("\n"),{parse_mode:"Markdown",reply_markup:navigationKeyboard("referral")});});
 bot.callbackQuery("leaderboard",async ctx=>{await ctx.answerCallbackQuery();return leaderboardScreen(ctx);});
