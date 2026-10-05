@@ -329,6 +329,7 @@ export async function revalidateEntry(pool:Pool,address:string,strategy:Strategy
 }
 
 export async function executeQualifiedEntry(pool:Pool,bot:BotLike,telegramId:number,address:string,symbol:string,strategy:Strategy){
+  return withUserTradeLock(pool,telegramId,async()=>{
   const live=process.env.ENGINE_MODE==="enabled"&&process.env.LIVE_TRADING==="true"&&process.env.LIVE_TRADING_ACK==="I_ACCEPT_REAL_SOLANA_TRANSACTIONS";
   if(!live) throw new Error("Live execution safety gate is not enabled.");
   await revalidateEntry(pool,address,strategy);
@@ -343,7 +344,16 @@ export async function executeQualifiedEntry(pool:Pool,bot:BotLike,telegramId:num
   if(!Number.isFinite(buySol)||buySol<=0) throw new Error("Invalid configured buy amount.");
   if(Number.isFinite(maxBuySol) && buySol>maxBuySol) throw new Error("Configured buy amount exceeds strategy maximum.");
   if(dailyLimit!=null){
-    const spent=await pool.query("SELECT COALESCE(SUM((details->>'inputAmount')::numeric),0)::numeric AS atomic FROM public.engine_events WHERE telegram_id=$1 AND event_type='swap_confirmed' AND details->>'side'='buy' AND created_at>=CURRENT_DATE",[telegramId]);
+    const spent=await pool.query(`
+      SELECT (
+        COALESCE((SELECT SUM((details->>'inputAmount')::numeric)
+          FROM public.engine_events
+          WHERE telegram_id=$1 AND event_type='swap_confirmed' AND details->>'side'='buy' AND created_at>=CURRENT_DATE),0)
+        + COALESCE((SELECT SUM(amount_atomic)
+          FROM public.trade_intents
+          WHERE telegram_id=$1 AND side='buy' AND status IN ('created','broadcast','confirmed') AND created_at>=CURRENT_DATE),0)
+      )::numeric AS atomic
+    `,[telegramId]);
     const spentSol=Number(spent.rows[0]?.atomic||0)/LAMPORTS_PER_SOL;
     if(spentSol+buySol>Number(dailyLimit)) throw new Error("Daily spending limit would be exceeded.");
   }
@@ -355,10 +365,15 @@ export async function executeQualifiedEntry(pool:Pool,bot:BotLike,telegramId:num
     await bot.api.sendMessage(telegramId,"🟢 ENTRY EXECUTED\\n\\n"+symbol+"\\n\\nCA:\\n"+address+"\\n\\nBuy: "+strategy.execution?.buyAmountSol+" SOL\\nTransaction:\\n"+result.signature);
     return {result,positionId};
   }catch(error){
-    await saveEvent(pool,telegramId,"execution_failed",address,{reason:String((error as any)?.message||error).slice(0,400),side:"buy"});
-    await bot.api.sendMessage(telegramId,"⚠️ EXECUTION FAILED\\n\\n"+address+"\\n\\n"+String((error as any)?.message||error).slice(0,300));
+    const message=String((error as any)?.message||error);
+    const unknown=message.startsWith("TRANSACTION_STATUS_UNKNOWN:");
+    await saveEvent(pool,telegramId,unknown?"execution_status_unknown":"execution_failed",address,{reason:message.slice(0,400),side:"buy"});
+    await bot.api.sendMessage(telegramId,unknown
+      ?"⚠️ TRANSACTION STATUS UNKNOWN\\n\\n"+address+"\\n\\nThe transaction was broadcast but confirmation could not be verified. Check the transaction before retrying."
+      :"⚠️ EXECUTION FAILED\\n\\n"+address+"\\n\\n"+message.slice(0,300));
     throw error;
   }
+  });
 }
 
 async function executePositionExit(pool:Pool,position:any,rawAmount:bigint,reason:string) {
@@ -583,7 +598,12 @@ export async function executeJupiterSwap(args:{
     await args.pool.query("UPDATE public.trade_intents SET status='failed',error=$2,updated_at=NOW() WHERE id=$1",[intentId,String((error as any)?.message||error).slice(0,500)]);
     throw error;
   }
-  const confirmation=await connection.confirmTransaction(signature,"confirmed");
+  let confirmation:any;
+  try{
+    confirmation=await connection.confirmTransaction(signature,"confirmed");
+  }catch(error){
+    throw new Error("TRANSACTION_STATUS_UNKNOWN: "+String((error as any)?.message||error));
+  }
   if(confirmation.value.err){
     await args.pool.query("UPDATE public.trade_intents SET status='failed',error=$2,updated_at=NOW() WHERE id=$1",[intentId,JSON.stringify(confirmation.value.err)]);
     throw new Error("On-chain transaction failed: "+JSON.stringify(confirmation.value.err));
