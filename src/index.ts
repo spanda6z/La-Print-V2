@@ -8,7 +8,7 @@ import { notifyAdmin } from "./admin-notifications.js";
 import { registerAdminConsole, recordAdminEvent } from "./admin-console.js";
 import { registerStrategySettings } from "./settings-v2.js";
 import { registerMultiWallets, ensureMultiWalletSchema } from "./multi-wallets.js";
-import { ensureEngineSchema, startEngine, getScannerView, getScannerToken, executeJupiterSwap, openVerifiedPosition } from "./engine.js";
+import { ensureEngineSchema, startEngine, getScannerView, getScannerToken, executeJupiterSwap, openVerifiedPosition, executeQualifiedEntry } from "./engine.js";
 
 const { Pool } = pg;
 const token = process.env.BOT_TOKEN ?? process.env.TELEGRAM_BOT_TOKEN;
@@ -588,7 +588,20 @@ bot.callbackQuery(/^call:approve:([1-9A-HJ-NP-Za-km-z]{32,44})$/,async ctx=>{
   if(r.missing.length)return show(ctx,"⚠️ *TRADE NOT EXECUTED*\\n\\n"+r.missing.map(x=>"❌ "+x).join("\\n")+"\\n\\nNo position was opened.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("⚙️ TRADE SETUP","setup").text("💰 WALLET","wallets").row().text("🏠 MAIN MENU","menu")});
   const live=process.env.ENGINE_MODE==="enabled"&&process.env.LIVE_TRADING==="true"&&process.env.LIVE_TRADING_ACK==="I_ACCEPT_REAL_SOLANA_TRANSACTIONS";
   if(!live)return show(ctx,"⚠️ *TRADE NOT EXECUTED*\\n\\nExecution is not enabled.\\n\\nNo position was opened.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("📊 VIEW DETAILS","call:details:"+ctx.match[1]).row().text("🏠 MAIN MENU","menu")});
-  try{const amount=Math.floor(Number(u.buy_amount)*LAMPORTS_PER_SOL);const result=await executeJupiterSwap({pool,telegramId:ctx.from!.id,inputMint:"So11111111111111111111111111111111111111112",outputMint:ctx.match[1],amountAtomic:String(amount),side:"buy"});const tokenRow=await getScannerToken(pool,ctx.from!.id,ctx.match[1]);const strategy={execution:{buyAmountSol:Number(u.buy_amount),stopLossPct:Number(u.sl_percent),takeProfit:u.tp_config?.targets||[],trailing:{enabled:false}}};await openVerifiedPosition(pool,ctx.from!.id,ctx.match[1],tokenRow?.symbol||"UNKNOWN",Number(u.buy_amount),result,strategy as any);return show(ctx,"🟢 *TRADE EXECUTED*\n\n`"+ctx.match[1]+"`\n\nEntry confirmed on-chain and position tracking started.\nBuy: "+u.buy_amount+" SOL.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("📡 ACTIVITY","activity").text("🏠 MAIN MENU","menu")});}catch(error){const reason=String((error as any)?.message||error).slice(0,300);await pool.query("INSERT INTO public.engine_events(telegram_id,event_type,token_address,details) VALUES($1,$2,$3,$4)",[ctx.from!.id,"execution_failed",ctx.match[1],{reason}]);return show(ctx,"⚠️ *TRADE NOT EXECUTED*\\n\\nReason:\\n"+reason+"\\n\\nNo position was opened.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔄 TRY AGAIN","call:approve:"+ctx.match[1]).text("🏠 MAIN MENU","menu")});}
+  try{
+    const strategy=Object.assign({},u.strategy_config||{}, {
+      execution:Object.assign({},(u.strategy_config||{}).execution||{}, {
+        buyAmountSol:Number(u.buy_amount),
+        maxBuyAmountSol:Number((u.strategy_config||{}).execution?.maxBuyAmountSol ?? u.buy_amount),
+        stopLossPct:Number(u.sl_percent),
+        takeProfit:u.tp_config?.targets||[],
+        dailySpendingLimitSol:(u.strategy_config||{}).execution?.dailySpendingLimitSol??null
+      })
+    });
+    const tokenRow=await getScannerToken(pool,ctx.from!.id,ctx.match[1]);
+    await executeQualifiedEntry(pool,bot,ctx.from!.id,ctx.match[1],tokenRow?.symbol||"UNKNOWN",strategy as any);
+    return show(ctx,"🟢 *TRADE EXECUTED*\\n\\n`"+ctx.match[1]+"`\\n\\nEntry confirmed on-chain and position tracking started.\\nBuy: "+u.buy_amount+" SOL.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("📡 ACTIVITY","activity").text("🏠 MAIN MENU","menu")});
+  }catch(error){const reason=String((error as any)?.message||error).slice(0,300);await pool.query("INSERT INTO public.engine_events(telegram_id,event_type,token_address,details) VALUES($1,$2,$3,$4)",[ctx.from!.id,"execution_failed",ctx.match[1],{reason}]);return show(ctx,"⚠️ *TRADE NOT EXECUTED*\\n\\nReason:\\n"+reason+"\\n\\nNo position was opened.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔄 TRY AGAIN","call:approve:"+ctx.match[1]).text("🏠 MAIN MENU","menu")});}
 });
 bot.callbackQuery("positions",async ctx=>{await ctx.answerCallbackQuery();const r=await pool.query("SELECT token_address,symbol,sol_spent,realized_pnl_sol,entry_price,remaining_amount,high_water_price,status,created_at FROM public.engine_positions WHERE telegram_id=$1 ORDER BY id DESC LIMIT 20",[ctx.from!.id]);if(!r.rowCount)return show(ctx,"📊 *POSITIONS*\n\nNo open or recorded positions yet.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔄 REFRESH","positions").text("🏠 MAIN MENU","menu")});const lines=r.rows.map((p:any)=>"• "+(p.symbol||"UNKNOWN")+"\n  "+p.status.toUpperCase()+" · Spent "+Number(p.sol_spent).toFixed(4)+" SOL\n  Realized PnL: "+Number(p.realized_pnl_sol).toFixed(6)+" SOL\n  CA: "+p.token_address);return show(ctx,"📊 *POSITIONS*\n\n"+lines.join("\n\n"),{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔄 REFRESH","positions").text("🏠 MAIN MENU","menu")});});
 bot.callbackQuery("activity",async ctx=>{await ctx.answerCallbackQuery();const r=await pool.query("SELECT event_type,token_address,details,created_at FROM public.engine_events WHERE telegram_id=$1 ORDER BY id DESC LIMIT 12",[ctx.from!.id]);const lines=r.rows.map((e:any)=>"• "+e.event_type+" · "+(e.token_address||"system")+"\n  "+new Date(e.created_at).toISOString()+"\n  "+JSON.stringify(e.details||{}).slice(0,220));return show(ctx,"📡 *ACTIVITY*\n\n"+(lines.length?lines.join("\n\n"):"No execution events yet."),{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🔄 REFRESH","activity").text("🏠 MAIN MENU","menu")});});
@@ -685,7 +698,7 @@ await init();
 await databaseSmokeTest();
 await bot.api.setMyCommands([{command:"start",description:"Open LaPrint"},{command:"menu",description:"Main menu"},{command:"setup",description:"Trade Autopilot setup"},{command:"strategy",description:"Advanced strategy settings"},{command:"mode",description:"Switch mode"},{command:"wallets",description:"Manage trading wallets"}]);
 console.log("LaPrint V2 starting. ENGINE_MODE="+(process.env.ENGINE_MODE||"disabled"));
-const stopEngine = startEngine(pool,bot);
+const stopEngine = await startEngine(pool,bot);
 const pollingClient = await acquireTelegramPollingLock();
 let shuttingDown = false;
 const shutdown = async (signal: string) => {
