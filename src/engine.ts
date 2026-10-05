@@ -398,6 +398,24 @@ async function positionMark(pool:Pool,position:any) {
   return {raw:b.raw,priceSol:Number(q.outAmount)/LAMPORTS_PER_SOL};
 }
 
+async function reconcileTradeIntents(pool:Pool){
+  const rows=await pool.query("SELECT id,telegram_id,token_address,side,signature FROM public.trade_intents WHERE status='broadcast' AND signature IS NOT NULL AND updated_at < NOW()-INTERVAL '5 seconds' ORDER BY updated_at ASC LIMIT 100");
+  if(!rows.rowCount)return;
+  const connection=new Connection(process.env.SOLANA_RPC_URL!,"confirmed");
+  const statuses=await connection.getSignatureStatuses(rows.rows.map((r:any)=>r.signature),{searchTransactionHistory:true});
+  for(let i=0;i<rows.rows.length;i++){
+    const row=rows.rows[i], status=statuses.value[i];
+    if(!status)continue;
+    if(status.err){
+      await pool.query("UPDATE public.trade_intents SET status='failed',error=$2,updated_at=NOW() WHERE id=$1",[row.id,JSON.stringify(status.err)]);
+      await saveEvent(pool,Number(row.telegram_id),"swap_reconciled_failed",row.token_address,{signature:row.signature,side:row.side});
+    }else if(status.confirmationStatus==="confirmed"||status.confirmationStatus==="finalized"){
+      await pool.query("UPDATE public.trade_intents SET status='confirmed',updated_at=NOW() WHERE id=$1",[row.id]);
+      await saveEvent(pool,Number(row.telegram_id),"swap_reconciled_confirmed",row.token_address,{signature:row.signature,side:row.side});
+    }
+  }
+}
+
 async function monitorPositions(pool:Pool,bot?:BotLike) {
   const open=await pool.query("SELECT * FROM public.engine_positions WHERE status='open' ORDER BY id ASC LIMIT 50");
   for(const position of open.rows){
@@ -464,7 +482,7 @@ export async function startEngine(pool:Pool,bot:BotLike) {
   if(!process.env.BIRDEYE_API_KEY){console.error("[scanner] Pump.fun discovery enabled but Birdeye enrichment key is missing; required enrichment will fail closed");}
   const tick=async()=>{
     if(scanning)return;scanning=true;
-    try{await scanOnce(pool,bot);if(engineEnabled)await monitorPositions(pool,bot);}
+    try{await reconcileTradeIntents(pool);await scanOnce(pool,bot);if(engineEnabled)await monitorPositions(pool,bot);}
     catch(e){console.error("[scanner] cycle failed",e);}
     finally{scanning=false;}
   };
