@@ -19,6 +19,29 @@ export async function ensureAdminAuditTable(pool: any) {
     );
     CREATE INDEX IF NOT EXISTS admin_events_created_idx ON public.admin_events(created_at DESC);
     CREATE INDEX IF NOT EXISTS admin_events_user_idx ON public.admin_events(telegram_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS public.admin_broadcasts (
+      id BIGSERIAL PRIMARY KEY,
+      admin_telegram_id BIGINT NOT NULL,
+      message_text TEXT NOT NULL,
+      audience TEXT NOT NULL DEFAULT 'active',
+      total_recipients INTEGER NOT NULL DEFAULT 0,
+      sent_count INTEGER NOT NULL DEFAULT 0,
+      failed_count INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      completed_at TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS admin_broadcasts_created_idx ON public.admin_broadcasts(created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS public.admin_broadcast_deliveries (
+      id BIGSERIAL PRIMARY KEY,
+      broadcast_id BIGINT NOT NULL REFERENCES public.admin_broadcasts(id) ON DELETE CASCADE,
+      telegram_id BIGINT NOT NULL,
+      status TEXT NOT NULL,
+      error TEXT,
+      delivered_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS admin_broadcast_deliveries_broadcast_idx ON public.admin_broadcast_deliveries(broadcast_id);
   `);
 }
 
@@ -42,26 +65,94 @@ async function isAdmin(id: number) {
   return getAdminIds().includes(id);
 }
 
+function homeKeyboard() {
+  return new InlineKeyboard()
+    .text("📊 OVERVIEW", "admin:overview").text("👥 USERS", "admin:users").row()
+    .text("📢 BROADCAST", "admin:broadcast").text("📋 HISTORY", "admin:history").row()
+    .text("⚡ TRADING", "admin:trading").text("🔎 SCANNER", "admin:scanner").row()
+    .text("🚨 RISK", "admin:risk").text("🛠 SYSTEM", "admin:system").row()
+    .text("🧾 EVENTS", "admin:events").text("🔔 TEST", "admin:test").row()
+    .text("🏠 MAIN MENU", "menu");
+}
+
+function adminBack() {
+  return new InlineKeyboard().text("🛡️ ADMIN HOME", "admin:home").row().text("🏠 MAIN MENU", "menu");
+}
+
+function userActions(id: string, blocked: boolean) {
+  return new InlineKeyboard()
+    .text(blocked ? "🟢 ENABLE USER" : "🔴 DISABLE USER", `admin:user:toggle:${id}`)
+    .row()
+    .text("⬅️ USER SEARCH", "admin:users").text("🛡️ ADMIN HOME", "admin:home");
+}
+
+async function sendBroadcast(bot: any, pool: any, adminId: number, messageText: string) {
+  const recipients = await pool.query(
+    "SELECT telegram_id FROM public.users WHERE COALESCE(admin_blocked,FALSE)=FALSE ORDER BY telegram_id"
+  );
+  const total = recipients.rows.length;
+  const created = await pool.query(
+    `INSERT INTO public.admin_broadcasts(admin_telegram_id,message_text,audience,total_recipients)
+     VALUES($1,$2,'active',$3) RETURNING id`,
+    [adminId, messageText, total]
+  );
+  const broadcastId = created.rows[0].id;
+  let sent = 0;
+  let failed = 0;
+
+  for (const row of recipients.rows) {
+    const telegramId = Number(row.telegram_id);
+    try {
+      await bot.api.sendMessage(telegramId, messageText);
+      sent++;
+      await pool.query(
+        "INSERT INTO public.admin_broadcast_deliveries(broadcast_id,telegram_id,status) VALUES($1,$2,'sent')",
+        [broadcastId, telegramId]
+      );
+    } catch (error: any) {
+      const retryAfter = Number(error?.parameters?.retry_after || 0);
+      if (retryAfter > 0 && retryAfter <= 60) {
+        await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+        try {
+          await bot.api.sendMessage(telegramId, messageText);
+          sent++;
+          await pool.query(
+            "INSERT INTO public.admin_broadcast_deliveries(broadcast_id,telegram_id,status) VALUES($1,$2,'sent')",
+            [broadcastId, telegramId]
+          );
+          continue;
+        } catch (retryError: any) {
+          error = retryError;
+        }
+      }
+      failed++;
+      const reason = String(error?.description || error?.message || error).slice(0, 500);
+      await pool.query(
+        "INSERT INTO public.admin_broadcast_deliveries(broadcast_id,telegram_id,status,error) VALUES($1,$2,'failed',$3)",
+        [broadcastId, telegramId, reason]
+      );
+    }
+    await new Promise(resolve => setTimeout(resolve, 40));
+  }
+
+  await pool.query(
+    "UPDATE public.admin_broadcasts SET sent_count=$2,failed_count=$3,completed_at=NOW() WHERE id=$1",
+    [broadcastId, sent, failed]
+  );
+  await recordAdminEvent(pool, "admin_broadcast", {
+    telegram_id: adminId, broadcast_id: broadcastId, total_recipients: total, sent_count: sent, failed_count: failed
+  }, failed ? "WARNING" : "ACTION");
+  return { broadcastId, total, sent, failed };
+}
+
 export function registerAdminConsole(deps: AdminDeps) {
   const { bot, pool, show } = deps;
 
   bot.command("admin", async (ctx: any) => {
     if (!(await isAdmin(ctx.from.id))) return;
     await ensureAdminAuditTable(pool);
-    await show(ctx, "🛡️ *LA-PRINT ADMIN*\\n\\nChoose an admin view.", {
-      parse_mode: "Markdown",
-      reply_markup: new InlineKeyboard()
-        .text("📊 OVERVIEW", "admin:overview")
-        .text("👥 USERS", "admin:users")
-        .row()
-        .text("⚡ TRADING", "admin:trading")
-        .text("🔎 SCANNER", "admin:scanner")
-        .row()
-        .text("🚨 RISK", "admin:risk")
-        .text("🛠 SYSTEM", "admin:system")
-        .row()
-        .text("🧾 EVENTS", "admin:events")
-        .text("🔔 TEST", "admin:test")
+    await show(ctx, "🛡️ *LA-PRINT ADMIN*\n\nManual control center for the bot. Choose an operation.", {
+      parse_mode: "Markdown", reply_markup: homeKeyboard()
     });
   });
 
@@ -74,78 +165,180 @@ export function registerAdminConsole(deps: AdminDeps) {
     const action = ctx.callbackQuery.data.slice(6);
     await ensureAdminAuditTable(pool);
 
-    if (action === "test") {
-      await notifyAdmin(bot, "system_error", { message: "Admin console test", telegram_id: ctx.from.id });
-      return show(ctx, "🔔 *TEST SENT*\\n\\nAdmin notification was dispatched.", {
-        parse_mode: "Markdown",
-        reply_markup: adminBack()
+    if (action === "home") {
+      return show(ctx, "🛡️ *LA-PRINT ADMIN*\n\nManual control center for the bot. Choose an operation.", {
+        parse_mode: "Markdown", reply_markup: homeKeyboard()
       });
     }
 
-    let title = "";
-    let query = "";
-    let params: any[] = [];
+    if (action === "test") {
+      await notifyAdmin(bot, "system_error", { message: "Admin console test", telegram_id: ctx.from.id });
+      return show(ctx, "🔔 *TEST SENT*\n\nAdmin notification was dispatched.", { parse_mode: "Markdown", reply_markup: adminBack() });
+    }
+
+    if (action === "broadcast") {
+      (ctx.session as any).adminInput = "broadcast";
+      (ctx.session as any).adminBroadcastDraft = undefined;
+      return show(ctx,
+        "📢 *POST UPDATE*\n\nSend the announcement text as your next message.\n\nNothing will be sent until you preview and confirm it.",
+        { parse_mode: "Markdown", reply_markup: new InlineKeyboard().text("❌ CANCEL", "admin:cancel_input") }
+      );
+    }
+
+    if (action === "cancel_input") {
+      (ctx.session as any).adminInput = undefined;
+      (ctx.session as any).adminBroadcastDraft = undefined;
+      return show(ctx, "🛡️ *ADMIN HOME*\n\nOperation cancelled.", { parse_mode: "Markdown", reply_markup: homeKeyboard() });
+    }
+
+    if (action === "confirm_broadcast") {
+      const draft = String((ctx.session as any).adminBroadcastDraft || "").trim();
+      if (!draft) return show(ctx, "⚠️ No broadcast draft is waiting.", { reply_markup: homeKeyboard() });
+      (ctx.session as any).adminInput = undefined;
+      (ctx.session as any).adminBroadcastDraft = undefined;
+      await show(ctx, "📢 *SENDING UPDATE*\n\nThe announcement is being delivered to registered active users.\n\nPlease wait for the delivery summary.", { parse_mode: "Markdown" });
+      const result = await sendBroadcast(bot, pool, ctx.from.id, draft);
+      return show(ctx,
+        "✅ *UPDATE SENT*\n\n👥 Recipients: " + result.total + "\n🟢 Delivered: " + result.sent + "\n🔴 Failed: " + result.failed + "\n\nThe broadcast was recorded in Admin History.",
+        { parse_mode: "Markdown", reply_markup: adminBack() }
+      );
+    }
+
+    if (action === "users") {
+      (ctx.session as any).adminInput = "user_search";
+      return show(ctx,
+        "👥 *USER MANAGEMENT*\n\nSend a Telegram ID or username to search.\n\nYou can then disable or re-enable the account. Disabled users cannot operate the bot and their trading is stopped.",
+        { parse_mode: "Markdown", reply_markup: new InlineKeyboard().text("📋 RECENT USERS", "admin:user_recent").row().text("❌ CANCEL", "admin:cancel_input") }
+      );
+    }
+
+    if (action === "user_recent") {
+      (ctx.session as any).adminInput = undefined;
+      const r = await pool.query(
+        "SELECT telegram_id,username,trading_active,COALESCE(admin_blocked,FALSE) AS admin_blocked,updated_at FROM public.users ORDER BY updated_at DESC LIMIT 15"
+      );
+      if (!r.rowCount) return show(ctx, "👥 *USERS*\n\nNo users registered yet.", { parse_mode: "Markdown", reply_markup: adminBack() });
+      const lines = r.rows.map((u: any) =>
+        "• " + u.telegram_id + " · @" + (u.username || "—") + " · " +
+        (u.admin_blocked ? "DISABLED" : u.trading_active ? "TRADING" : "READY")
+      );
+      return show(ctx, "👥 *RECENT USERS*\n\n" + lines.join("\n") + "\n\nUse User Management search to act on a specific user.", {
+        parse_mode: "Markdown", reply_markup: adminBack()
+      });
+    }
+
+    if (action === "history") {
+      const r = await pool.query(
+        "SELECT id,admin_telegram_id,audience,total_recipients,sent_count,failed_count,created_at FROM public.admin_broadcasts ORDER BY created_at DESC LIMIT 15"
+      );
+      if (!r.rowCount) return show(ctx, "📋 *BROADCAST HISTORY*\n\nNo broadcasts yet.", { parse_mode: "Markdown", reply_markup: adminBack() });
+      const lines = r.rows.map((b: any) =>
+        "• #" + b.id + " · " + new Date(b.created_at).toISOString().replace("T", " ").slice(0, 16) +
+        "\n  👥 " + b.total_recipients + " · 🟢 " + b.sent_count + " · 🔴 " + b.failed_count
+      );
+      return show(ctx, "📋 *BROADCAST HISTORY*\n\n" + lines.join("\n\n"), { parse_mode: "Markdown", reply_markup: adminBack() });
+    }
 
     if (action === "overview") {
       const r = await pool.query(`
         SELECT
           (SELECT COUNT(*) FROM public.users) users,
-          (SELECT COUNT(*) FROM public.users WHERE trading_active=true) active,
+          (SELECT COUNT(*) FROM public.users WHERE trading_active=true AND COALESCE(admin_blocked,FALSE)=FALSE) active,
           (SELECT COUNT(*) FROM public.wallets) wallets,
           (SELECT COUNT(*) FROM public.admin_events WHERE created_at > NOW()-INTERVAL '24 hours') events_24h,
-          (SELECT COUNT(*) FROM public.admin_events WHERE severity IN ('WARNING','CRITICAL') AND created_at > NOW()-INTERVAL '24 hours') alerts_24h
+          (SELECT COUNT(*) FROM public.admin_events WHERE severity IN ('WARNING','CRITICAL') AND created_at > NOW()-INTERVAL '24 hours') alerts_24h,
+          (SELECT COUNT(*) FROM public.users WHERE COALESCE(admin_blocked,FALSE)=TRUE) disabled
       `);
       const x = r.rows[0];
-      return show(ctx, "📊 *ADMIN OVERVIEW*\\n\\n👥 Users: "+x.users+"\\n⚡ Active trading: "+x.active+"\\n💰 Wallets: "+x.wallets+"\\n🧾 Events 24h: "+x.events_24h+"\\n🚨 Warnings/Critical 24h: "+x.alerts_24h, {parse_mode:"Markdown", reply_markup:adminBack()});
+      return show(ctx, "📊 *ADMIN OVERVIEW*\n\n👥 Users: " + x.users + "\n⚡ Active trading: " + x.active +
+        "\n🚫 Disabled: " + x.disabled + "\n💰 Wallets: " + x.wallets + "\n🧾 Events 24h: " + x.events_24h +
+        "\n🚨 Warnings/Critical 24h: " + x.alerts_24h, { parse_mode: "Markdown", reply_markup: adminBack() });
     }
 
-    if (action === "users") {
-      title = "👥 *RECENT USERS*";
-      query = "SELECT telegram_id,username,mode,trading_active,strategy_profile,strategy_version,updated_at FROM public.users ORDER BY updated_at DESC LIMIT 10";
-    } else if (action === "trading") {
-      title = "⚡ *TRADING ACTIVITY*";
-      query = "SELECT telegram_id,event_type,severity,payload,created_at FROM public.admin_events WHERE event_type IN ('trading_started','trading_stopped','risk_event') ORDER BY created_at DESC LIMIT 10";
-    } else if (action === "scanner") {
-      title = "🔎 *SCANNER EVENTS*";
-      query = "SELECT telegram_id,event_type,severity,payload,created_at FROM public.admin_events WHERE event_type IN ('system_error','risk_event') AND payload::text ILIKE '%scanner%' ORDER BY created_at DESC LIMIT 10";
-    } else if (action === "risk") {
-      title = "🚨 *RISK EVENTS*";
-      query = "SELECT telegram_id,event_type,severity,payload,created_at FROM public.admin_events WHERE event_type='risk_event' ORDER BY created_at DESC LIMIT 10";
-    } else if (action === "system") {
-      title = "🛠 *SYSTEM EVENTS*";
-      query = "SELECT telegram_id,event_type,severity,payload,created_at FROM public.admin_events WHERE event_type='system_error' ORDER BY created_at DESC LIMIT 10";
-    } else if (action === "events") {
-      title = "🧾 *RECENT EVENTS*";
-      query = "SELECT telegram_id,event_type,severity,payload,created_at FROM public.admin_events ORDER BY created_at DESC LIMIT 15";
-    } else {
-      return show(ctx, "Unknown admin action.", {reply_markup: adminBack()});
+    if (action === "trading") {
+      const r = await pool.query("SELECT telegram_id,event_type,severity,payload,created_at FROM public.admin_events WHERE event_type IN ('trading_started','trading_stopped','risk_event') ORDER BY created_at DESC LIMIT 10");
+      return renderRows(ctx, "⚡ *TRADING ACTIVITY*", r.rows, adminBack(), true);
+    }
+    if (action === "scanner") {
+      const r = await pool.query("SELECT telegram_id,event_type,severity,payload,created_at FROM public.admin_events WHERE event_type IN ('system_error','risk_event') AND payload::text ILIKE '%scanner%' ORDER BY created_at DESC LIMIT 10");
+      return renderRows(ctx, "🔎 *SCANNER EVENTS*", r.rows, adminBack(), true);
+    }
+    if (action === "risk") {
+      const r = await pool.query("SELECT telegram_id,event_type,severity,payload,created_at FROM public.admin_events WHERE event_type='risk_event' ORDER BY created_at DESC LIMIT 10");
+      return renderRows(ctx, "🚨 *RISK EVENTS*", r.rows, adminBack(), true);
+    }
+    if (action === "system") {
+      const r = await pool.query("SELECT telegram_id,event_type,severity,payload,created_at FROM public.admin_events WHERE event_type='system_error' ORDER BY created_at DESC LIMIT 10");
+      return renderRows(ctx, "🛠 *SYSTEM EVENTS*", r.rows, adminBack(), true);
+    }
+    if (action === "events") {
+      const r = await pool.query("SELECT telegram_id,event_type,severity,payload,created_at FROM public.admin_events ORDER BY created_at DESC LIMIT 15");
+      return renderRows(ctx, "🧾 *RECENT EVENTS*", r.rows, adminBack(), true);
     }
 
-    const r = await pool.query(query, params);
-    if (!r.rows.length) return show(ctx, title+"\\n\\n_No events yet._", {parse_mode:"Markdown", reply_markup:adminBack()});
-    const lines = r.rows.map((row:any) => {
-      const when = new Date(row.created_at).toISOString().replace("T"," ").slice(0,16);
-      if (action === "users") return "• "+row.telegram_id+" · @"+(row.username||"—")+" · "+(row.strategy_profile||"—")+" v"+(row.strategy_version||"—")+" · "+(row.trading_active?"ACTIVE":"OFF");
-      const payload = JSON.stringify(row.payload||{}).slice(0,180);
-      return "• "+when+" · "+row.severity+" · "+row.event_type+" · "+payload;
-    });
-    return show(ctx, title+"\\n\\n"+lines.join("\\n"), {parse_mode:"Markdown", reply_markup:adminBack()});
+    const toggleMatch = action.match(/^user:toggle:(\\d+)$/);
+    if (toggleMatch) {
+      const targetId = toggleMatch[1];
+      const r = await pool.query("SELECT telegram_id,username,trading_active,COALESCE(admin_blocked,FALSE) AS admin_blocked FROM public.users WHERE telegram_id=$1", [targetId]);
+      if (!r.rowCount) return show(ctx, "⚠️ User not found.", { reply_markup: adminBack() });
+      const target = r.rows[0];
+      const nextBlocked = !Boolean(target.admin_blocked);
+      await pool.query("UPDATE public.users SET admin_blocked=$2,trading_active=CASE WHEN $2 THEN FALSE ELSE trading_active END,updated_at=NOW() WHERE telegram_id=$1", [targetId, nextBlocked]);
+      await recordAdminEvent(pool, nextBlocked ? "admin_user_disabled" : "admin_user_enabled", {
+        telegram_id: ctx.from.id, target_telegram_id: targetId, username: target.username
+      }, "ACTION");
+      return show(ctx,
+        (nextBlocked ? "🚫 *USER DISABLED*" : "🟢 *USER ENABLED*") +
+        "\n\nUser: " + targetId + "\nUsername: @" + (target.username || "—") +
+        "\n\n" + (nextBlocked ? "Trading has been stopped and the user can no longer operate the bot." : "The user can access the bot again; trading remains stopped until they start it."),
+        { parse_mode: "Markdown", reply_markup: userActions(targetId, nextBlocked) }
+      );
+    }
+
+    return show(ctx, "Unknown admin action.", { reply_markup: adminBack() });
   });
 
-  function adminBack() {
-    return new InlineKeyboard().text("🛡️ ADMIN HOME","admin:home").row().text("🏠 MAIN MENU","menu");
-  }
-
-  bot.callbackQuery("admin:home", async (ctx:any) => {
-    if (!(await isAdmin(ctx.from.id))) return;
-    await ctx.answerCallbackQuery();
-    await show(ctx, "🛡️ *LA-PRINT ADMIN*\\n\\nChoose an admin view.", {
-      parse_mode:"Markdown",
-      reply_markup:new InlineKeyboard()
-        .text("📊 OVERVIEW","admin:overview").text("👥 USERS","admin:users").row()
-        .text("⚡ TRADING","admin:trading").text("🔎 SCANNER","admin:scanner").row()
-        .text("🚨 RISK","admin:risk").text("🛠 SYSTEM","admin:system").row()
-        .text("🧾 EVENTS","admin:events").text("🔔 TEST","admin:test")
-    });
+  bot.on("message:text", async (ctx: any, next: any) => {
+    if (!(await isAdmin(ctx.from.id))) return next();
+    const input = (ctx.session as any).adminInput;
+    if (!input) return next();
+    const raw = ctx.message.text.trim();
+    if (!raw) return;
+    if (input === "broadcast") {
+      (ctx.session as any).adminInput = undefined;
+      (ctx.session as any).adminBroadcastDraft = raw;
+      return show(ctx,
+        "👀 *PREVIEW UPDATE*\n\n" + raw + "\n\nThis will be sent to all registered users who are not disabled. Confirm only if the message is correct.",
+        { parse_mode: "Markdown", reply_markup: new InlineKeyboard().text("📢 SEND TO USERS", "admin:confirm_broadcast").text("✏️ EDIT", "admin:broadcast").row().text("❌ CANCEL", "admin:cancel_input") }
+      );
+    }
+    if (input === "user_search") {
+      (ctx.session as any).adminInput = undefined;
+      const normalized = raw.startsWith("@") ? raw.slice(1).toLowerCase() : raw;
+      const r = /^\\d+$/.test(normalized)
+        ? await pool.query("SELECT telegram_id,username,trading_active,COALESCE(admin_blocked,FALSE) AS admin_blocked,created_at,updated_at FROM public.users WHERE telegram_id=$1", [normalized])
+        : await pool.query("SELECT telegram_id,username,trading_active,COALESCE(admin_blocked,FALSE) AS admin_blocked,created_at,updated_at FROM public.users WHERE LOWER(username)=LOWER($1) LIMIT 1", [normalized]);
+      if (!r.rowCount) return show(ctx, "⚠️ *USER NOT FOUND*\n\nNo registered user matched `" + raw + "`.", { parse_mode: "Markdown", reply_markup: adminBack() });
+      const u = r.rows[0];
+      return show(ctx,
+        "👤 *USER MANAGEMENT*\n\nTelegram ID: " + u.telegram_id + "\nUsername: @" + (u.username || "—") +
+        "\nTrading: " + (u.trading_active ? "ACTIVE" : "STOPPED") +
+        "\nAccount: " + (u.admin_blocked ? "DISABLED" : "ENABLED") +
+        "\nCreated: " + new Date(u.created_at).toISOString().slice(0, 16) +
+        "\nUpdated: " + new Date(u.updated_at).toISOString().slice(0, 16),
+        { parse_mode: "Markdown", reply_markup: userActions(String(u.telegram_id), Boolean(u.admin_blocked)) }
+      );
+    }
+    return next();
   });
+}
+
+async function renderRows(ctx: any, title: string, rows: any[], keyboard: any, includePayload: boolean) {
+  if (!rows.length) return ctx.editMessageText(title + "\n\n_No events yet._", { parse_mode: "Markdown", reply_markup: keyboard });
+  const lines = rows.map((row: any) => {
+    const when = new Date(row.created_at).toISOString().replace("T", " ").slice(0, 16);
+    const payload = includePayload ? JSON.stringify(row.payload || {}).slice(0, 180) : "";
+    return "• " + when + " · " + row.severity + " · " + row.event_type + (payload ? " · " + payload : "");
+  });
+  return ctx.editMessageText(title + "\n\n" + lines.join("\n"), { parse_mode: "Markdown", reply_markup: keyboard });
 }
