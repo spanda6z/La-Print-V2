@@ -326,14 +326,59 @@ async function setupScreen(ctx:Ctx){
   const u=await user(ctx.from!.id,ctx.from!.username);
   const wallet=await pool.query("SELECT id FROM public.trading_wallets WHERE telegram_id=$1 AND is_active=TRUE",[ctx.from!.id]);
   const missing=[!u.buy_amount?"Buy amount":null,!u.tp_config?"Take profit":null,!u.sl_percent?"Stop loss":null,!u.filters?"Filters":null,!u.alerts?"Alerts":null,!wallet.rowCount?"Wallet":null].filter(Boolean) as string[];
-  const text="⚙️ Trade Setup\n\nChoose a ready-made trading setup, or customize everything yourself.\n\nThe ready-made setups automatically configure your buy amount, take profit, stop loss, token filters, Smart Filters and alerts.\n\n"+(missing.length?"Next: "+missing[0]:"Your current setup is complete.");
-  await show(ctx,text,{reply_markup:new InlineKeyboard().text("🛡️ BALANCED","preset:balanced").text("⚡ AGGRESSIVE","preset:aggressive").row().text("✏️ CUSTOM SETUP","preset:custom").row().text("🧾 REVIEW","review").row().text("⬅️ BACK","menu")});
+  const text=[
+    uiHeader("TRADE SETUP","⚙️"),
+    "",
+    "Build a ready-to-use strategy or customize each rule yourself.",
+    "",
+    uiSection("SETUP STATUS","📊"),
+    "",
+    missing.length ? "⚠️ Next required: "+missing[0] : "✅ Your current setup is complete.",
+    "",
+    uiSection("READY-MADE SETUPS","🛡️"),
+    "",
+    "Balanced and Aggressive presets configure the core trading rules for you.",
+    "",
+    uiSection("CUSTOM SETUP","✏️"),
+    "",
+    "Change buy size, TP, SL, filters, alerts and wallet settings individually.",
+    "",
+    uiFooter()
+  ].join("\n");
+  await show(ctx,text,{parse_mode:"Markdown",reply_markup:uiKeyboard([
+    [["🛡️ BALANCED","preset:balanced"],["⚡ AGGRESSIVE","preset:aggressive"]],
+    [["✏️ CUSTOMIZE SETUP","preset:custom"]],
+    [["🧾 REVIEW CURRENT SETUP","review"]],
+    [["⬅️ BACK","menu"],["🏠 MAIN MENU","menu"]]
+  ])});
 }
 
 async function manualSetupScreen(ctx:Ctx){
   const u=await user(ctx.from!.id,ctx.from!.username);
   const wallet=await pool.query("SELECT id FROM public.trading_wallets WHERE telegram_id=$1 AND is_active=TRUE",[ctx.from!.id]);
-  await show(ctx,"⚙️ Custom Trading Setup\n\nChange any trading rule yourself.\n\n💰 Buy amount: "+(u.buy_amount?"✅ "+u.buy_amount+" SOL":"❌ Required")+"\n🎯 Take profit: "+(u.tp_config?"✅ Saved":"❌ Required")+"\n🛑 Stop loss: "+(u.sl_percent?"✅ "+u.sl_percent+"%":"❌ Required")+"\n🔎 Filters: "+(u.filters?"✅ Saved":"❌ Required")+"\n🔔 Alerts: "+(u.alerts?"✅ Saved":"❌ Required")+"\n💰 Wallet: "+(wallet.rowCount?"✅ Ready":"❌ Required"),{reply_markup:new InlineKeyboard().text("💰 BUY AMOUNT","setup:buy").text("🎯 TAKE PROFIT","setup:tp").row().text("🛑 STOP LOSS","setup:sl").text("🔎 FILTERS","setup:filters").row().text("🔔 ALERTS","setup:alerts").text("💰 WALLET","wallets").row().text("🧾 REVIEW","review").row().text("⬅️ BACK","setup").text("🏠 MAIN MENU","menu")});
+  const text=[
+    uiHeader("CUSTOM SETUP","⚙️"),
+    "",
+    "Adjust your trading rules one section at a time.",
+    "",
+    uiSection("CURRENT CONFIGURATION","📊"),
+    "",
+    "💰 Buy amount   "+(u.buy_amount?"✅ "+u.buy_amount+" SOL":"❌ Required"),
+    "🎯 Take profit  "+(u.tp_config?"✅ Saved":"❌ Required"),
+    "🛑 Stop loss    "+(u.sl_percent?"✅ "+u.sl_percent+"%":"❌ Required"),
+    "🔎 Filters      "+(u.filters?"✅ Saved":"❌ Required"),
+    "🔔 Alerts       "+(u.alerts?"✅ Saved":"❌ Required"),
+    "👛 Wallet       "+(wallet.rowCount?"✅ Ready":"❌ Required"),
+    "",
+    uiFooter()
+  ].join("\n");
+  await show(ctx,text,{parse_mode:"Markdown",reply_markup:uiKeyboard([
+    [["💰 BUY AMOUNT","setup:buy"],["🎯 TAKE PROFIT","setup:tp"]],
+    [["🛑 STOP LOSS","setup:sl"],["🔎 FILTERS","setup:filters"]],
+    [["🔔 ALERTS","setup:alerts"],["👛 WALLET","wallets"]],
+    [["🧾 REVIEW SETUP","review"]],
+    [["⬅️ BACK","setup"],["🏠 MAIN MENU","menu"]]
+  ])});
 }
 
 async function setupDetails(ctx:Ctx){
