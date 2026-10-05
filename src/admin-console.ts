@@ -276,7 +276,7 @@ export function registerAdminConsole(deps: AdminDeps) {
       return renderRows(ctx, "🧾 *RECENT EVENTS*", r.rows, adminBack(), true);
     }
 
-    const toggleMatch = action.match(/^user:toggle:(\\d+)$/);
+    const toggleMatch = action.match(/^user:toggle:(\d+)$/);
     if (toggleMatch) {
       const targetId = toggleMatch[1];
       const r = await pool.query("SELECT telegram_id,username,trading_active,COALESCE(admin_blocked,FALSE) AS admin_blocked FROM public.users WHERE telegram_id=$1", [targetId]);
@@ -315,7 +315,7 @@ export function registerAdminConsole(deps: AdminDeps) {
     if (input === "user_search") {
       (ctx.session as any).adminInput = undefined;
       const normalized = raw.startsWith("@") ? raw.slice(1).toLowerCase() : raw;
-      const r = /^\\d+$/.test(normalized)
+      const r = /^\d+$/.test(normalized)
         ? await pool.query("SELECT telegram_id,username,trading_active,COALESCE(admin_blocked,FALSE) AS admin_blocked,created_at,updated_at FROM public.users WHERE telegram_id=$1", [normalized])
         : await pool.query("SELECT telegram_id,username,trading_active,COALESCE(admin_blocked,FALSE) AS admin_blocked,created_at,updated_at FROM public.users WHERE LOWER(username)=LOWER($1) LIMIT 1", [normalized]);
       if (!r.rowCount) return show(ctx, "⚠️ *USER NOT FOUND*\n\nNo registered user matched `" + raw + "`.", { parse_mode: "Markdown", reply_markup: adminBack() });
