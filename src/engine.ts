@@ -14,7 +14,7 @@ type Strategy = {
     top10Max?: number; devMax?: number; smartFilters?: boolean; strictData?: boolean;
   };
   execution?: {
-    buyAmountSol?: number;
+    buyAmountSol?: number; maxBuyAmountSol?: number;
     takeProfit?: {pct:number;sellPct:number}[]; maxOpenPositions?: number; dailySpendingLimitSol?: number | null;
     stopLossPct?: number;
     trailing?: {enabled:boolean;activationPct:number;pullbackPct:number};
@@ -32,6 +32,17 @@ const now = () => new Date();
 const n = (v:any):number|null => { const x=Number(v); return Number.isFinite(x)&&x>=0?x:null; };
 const pick = (o:any,...keys:string[]) => { for(const k of keys){const v=o?.[k];if(v!==undefined&&v!==null)return v;}return null; };
 const authHeaders = (key:string) => ({ "X-API-KEY":key, "x-chain":"solana", accept:"application/json" });
+
+async function withUserTradeLock<T>(pool:Pool,telegramId:number,fn:()=>Promise<T>):Promise<T>{
+  const client=await pool.connect();
+  try{
+    await client.query("SELECT pg_advisory_lock(hashtextextended($1,734221))",["laprint-trade:"+telegramId]);
+    return await fn();
+  }finally{
+    try{await client.query("SELECT pg_advisory_unlock(hashtextextended($1,734221))",["laprint-trade:"+telegramId]);}catch{}
+    client.release();
+  }
+}
 
 export async function ensureEngineSchema(pool:Pool) {
   await pool.query(`
