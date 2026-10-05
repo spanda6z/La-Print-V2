@@ -6,15 +6,26 @@ export function uiHeader(screen:string, icon="⚡"){ return icon+" *LA-PRINT ┃
 export function uiSection(title:string, icon="▸"){ return icon+" *"+title.toUpperCase()+"*"; }
 export function uiFooter(){ return UI_DIVIDER+"\nUse the buttons below to continue."; }
 
-export function mainMenuKeyboard(active:boolean, mode:string){
+export type UIRow = Array<[string,string]>;
+
+export function uiKeyboard(rows:UIRow[]){
   const k=new InlineKeyboard();
-  k.text(active ? (mode==="manual"?"⏹️ STOP FEED":"⏹️ STOP AUTOPILOT") : (mode==="manual"?"▶️ START FEED":"🚀 START"), active?"trade:stop":"trade:start").row();
-  k.text("🚀 TRADE","mode:auto").text("📈 POSITIONS","positions").row();
-  k.text("👛 WALLET","wallets").text("🎯 STRATEGY","setup").row();
-  k.text("🎁 REFERRAL","referral").text("🏆 LEADERBOARD","leaderboard").row();
-  k.text("❓ HELP & SUPPORT","help").text("📚 DOCUMENTATION","docs").row();
-  k.text("⚙️ SETTINGS","setup");
+  rows.forEach((row,index)=>{
+    row.forEach(([label,data])=>k.text(label,data));
+    if(index<rows.length-1) k.row();
+  });
   return k;
+}
+
+export function mainMenuKeyboard(active:boolean, mode:string){
+  return uiKeyboard([
+    [[active ? (mode==="manual"?"⏹️ STOP FEED":"⏹️ STOP AUTOPILOT") : (mode==="manual"?"▶️ START FEED":"🚀 START"), active?"trade:stop":"trade:start"]],
+    [["🚀 TRADE","mode:auto"],["📈 POSITIONS","positions"]],
+    [["👛 WALLET","wallets"],["🎯 STRATEGY","setup"]],
+    [["🎁 REFERRAL","referral"],["🏆 LEADERBOARD","leaderboard"]],
+    [["❓ HELP & SUPPORT","help"],["📚 DOCUMENTATION","docs"]],
+    [["⚙️ SETTINGS","setup"]]
+  ]);
 }
 
 export function navigationKeyboard(back="menu"){
