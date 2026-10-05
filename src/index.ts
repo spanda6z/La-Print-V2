@@ -9,6 +9,7 @@ import { registerAdminConsole, recordAdminEvent } from "./admin-console.js";
 import { registerStrategySettings } from "./settings-v2.js";
 import { registerMultiWallets, ensureMultiWalletSchema } from "./multi-wallets.js";
 import { ensureEngineSchema, startEngine, getScannerView, getScannerToken, executeQualifiedEntry } from "./engine.js";
+import { uiHeader, uiSection, uiFooter, mainMenuKeyboard, navigationKeyboard } from "./ui.js";
 
 const { Pool } = pg;
 const token = process.env.BOT_TOKEN ?? process.env.TELEGRAM_BOT_TOKEN;
@@ -286,19 +287,30 @@ async function menu(ctx:Ctx){
   const active=Boolean(u.trading_active);
   const wallet=await pool.query("SELECT name,public_key,is_active FROM public.trading_wallets WHERE telegram_id=$1 AND is_active=TRUE LIMIT 1",[ctx.from!.id]);
   let balance=Number(u.wallet_balance||0);
-  if(wallet.rowCount){ try { balance=await readSolBalance(wallet.rows[0].public_key); await patch(ctx.from!.id,{wallet_balance:balance,...(balance>0?{funding_prompt_sent:false}:{})}); } catch {} }
+  if(wallet.rowCount){
+    try { balance=await readSolBalance(wallet.rows[0].public_key); await patch(ctx.from!.id,{wallet_balance:balance,...(balance>0?{funding_prompt_sent:false}:{})}); } catch {}
+  }
   const configured=Boolean(u.buy_amount&&u.tp_config&&u.sl_percent&&u.filters&&u.alerts&&wallet.rowCount);
-  const mode=u.mode==="manual"?"✋ MANUAL":u.mode==="autopilot"?"🎯 AUTOPILOT":"⚪ NOT CONFIGURED";
-  const text="🚀 LAPrINT TRADE\n\nYour trading dashboard.\n\n💰 Balance: "+(Number.isFinite(balance)?balance.toFixed(4):"—")+" SOL\n🎯 Trading mode: "+mode+"\n📊 Open positions: 0\n📈 Realized PnL: 0 SOL\n\n"+(configured?"Your trading setup is ready.":"Set up your trading rules before starting.");
-  const k=new InlineKeyboard();
-  if(!configured) k.text("⚙️ CONFIGURE TRADING","setup").row();
-  else k.text(active?(u.mode==="manual"?"⏹️ STOP FEED":"⏹️ STOP AUTOPILOT"):(u.mode==="manual"?"▶️ START FEED":"🚀 START"),active?"trade:stop":"trade:start").row();
-  k.text("🎯 AUTOPILOT","mode:auto").text("✋ MANUAL","mode:manual").row();
-  k.text("💰 WALLET","wallets").text("📊 POSITIONS","positions").row();
-  k.text("📡 ACTIVITY","activity").text("⚙️ SETTINGS","setup").row();
-  k.text("🔎 DISCOVER","discover");
-  await show(ctx,text,{reply_markup:k});
+  const mode=u.mode==="manual"?"✋ Manual":u.mode==="autopilot"?"🎯 Autopilot":"⚪ Not configured";
+  const text=[
+    uiHeader("MAIN MENU"),
+    "",
+    "Welcome back to LA-PRINT.",
+    "",
+    uiSection("Trading Overview","📊"),
+    "",
+    "💰 Balance       "+(Number.isFinite(balance)?balance.toFixed(4):"—")+" SOL",
+    "🎯 Mode          "+mode,
+    "🟢 Status        "+(active?"Trading active":"Ready / stopped"),
+    "⚙️ Setup         "+(configured?"Complete":"Needs configuration"),
+    "",
+    "LA-PRINT helps you discover qualified Solana tokens and manage them through your saved trading rules. Use the sections below to review your wallet, strategy, positions, referrals and support resources.",
+    "",
+    uiFooter()
+  ].join("\n");
+  return show(ctx,text,{parse_mode:"Markdown",reply_markup:mainMenuKeyboard(active,u.mode||"autopilot")});
 }
+
 async function modeScreen(ctx:Ctx){
   await user(ctx.from!.id,ctx.from!.username);
   await show(ctx,"🚀 LAPrINT TRADE\\n━━━━━━━━━━━━━━━━━━━━\\n\\n"+
