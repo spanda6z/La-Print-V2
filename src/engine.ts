@@ -183,7 +183,7 @@ function mapCandidate(raw:any,ov:any,security:Security):Candidate {
     liquidity:n(pick(ov,"liquidity","liquidity_usd")), volume5m:n(v5),
     createdAt:Number.isFinite(createdAt as number)?createdAt:null,
     holders:n(pick(ov,"holder","holders","holder_count")), top10:n(pick(ov,"top10_holder_percent","top10","top_10_holder_pct")),
-    devPct:n(pick(ov,"creator_percentage","creator_percent","dev_percent")), security, source:{listing:raw,overview:ov}
+    devPct:n(pick(ov,"creator_percentage","creator_percent","dev_percent")), security, source:{listing:raw,overview:ov,security}
   };
 }
 
@@ -315,9 +315,23 @@ export async function openVerifiedPosition(pool:Pool,telegramId:number,token:str
 
 
 
+export async function revalidateEntry(pool:Pool,address:string,strategy:Strategy){
+  const stored=await pool.query("SELECT market_data FROM public.engine_candidates WHERE address=$1 LIMIT 1",[address]);
+  if(!stored.rowCount) throw new Error("Candidate is no longer available.");
+  const md=stored.rows[0].market_data||{};
+  const ov=await overview(address);
+  const security=await mintSecurity(address);
+  const candidate=mapCandidate(md.listing||{address},ov,security);
+  candidate.address=address;
+  const result=evaluateCandidate(candidate,strategy);
+  if(!result.qualified) throw new Error("Candidate no longer qualifies: "+result.reasons.join(", "));
+  return candidate;
+}
+
 export async function executeQualifiedEntry(pool:Pool,bot:BotLike,telegramId:number,address:string,symbol:string,strategy:Strategy){
   const live=process.env.ENGINE_MODE==="enabled"&&process.env.LIVE_TRADING==="true"&&process.env.LIVE_TRADING_ACK==="I_ACCEPT_REAL_SOLANA_TRANSACTIONS";
   if(!live) throw new Error("Live execution safety gate is not enabled.");
+  await revalidateEntry(pool,address,strategy);
   const wallet=await getActiveTradingWallet(pool,telegramId);
   if(!wallet) throw new Error("No active trading wallet.");
   const open=await pool.query("SELECT COUNT(*)::int AS n FROM public.engine_positions WHERE telegram_id=$1 AND status='open'",[telegramId]);
