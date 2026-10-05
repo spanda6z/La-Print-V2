@@ -9,7 +9,7 @@ import { registerAdminConsole, recordAdminEvent } from "./admin-console.js";
 import { registerStrategySettings } from "./settings-v2.js";
 import { registerMultiWallets, ensureMultiWalletSchema } from "./multi-wallets.js";
 import { ensureEngineSchema, startEngine, getScannerView, getScannerToken, executeQualifiedEntry } from "./engine.js";
-import { uiHeader, uiSection, uiFooter, mainMenuKeyboard, navigationKeyboard } from "./ui.js";
+import { uiHeader, uiSection, uiFooter, uiKeyboard, mainMenuKeyboard, navigationKeyboard } from "./ui.js";
 
 const { Pool } = pg;
 const token = process.env.BOT_TOKEN ?? process.env.TELEGRAM_BOT_TOKEN;
@@ -231,9 +231,10 @@ async function once(id:number,key:string) {
 
 const back = (target="setup") => new InlineKeyboard().text("⬅️ BACK",target).text("🏠 MAIN MENU","menu");
 
-const modeKb = () => new InlineKeyboard()
-  .text("🎯 AUTOPILOT","mode:auto").text("✋ MANUAL","mode:manual")
-  .row().text("⬅️ BACK","menu").text("🏠 MAIN MENU","menu");
+const modeKb = () => uiKeyboard([
+  [["🎯 AUTOPILOT","mode:auto"],["✋ MANUAL","mode:manual"]],
+  [["⬅️ BACK","menu"],["🏠 MAIN MENU","menu"]]
+]);
 
 const setupKb = (_u?:any) => {
   const k=new InlineKeyboard()
