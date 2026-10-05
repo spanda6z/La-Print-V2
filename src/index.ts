@@ -397,8 +397,44 @@ async function manualSetupScreen(ctx:Ctx){
 async function setupDetails(ctx:Ctx){
   const u=await user(ctx.from!.id,ctx.from!.username),f=u.filters||{};
   const tp=u.tp_config?.targets?.map((t:any)=>"+"+t.pct+"% → sell "+t.sellPct+"%").join(" / ")||"Not set";
-  const text="⚙️ Trading Configuration\n\n💰 Buy amount: "+(u.buy_amount??"Not set")+" SOL\n🎯 Take profit: "+tp+"\n🛑 Stop loss: "+(u.sl_percent??"Not set")+"%\n\n🔎 Market cap: $"+(f.minMc??"—")+"+\n💧 Liquidity: $"+(f.minLiquidity??"—")+"+\n📈 5M volume: $"+(f.minVolume5m??"—")+"+\n⏱️ Token age: "+(f.minAgeSec??"—")+"–"+(f.maxAgeMin??"—")+" minutes\n👥 Holders: "+(f.minHolders??"—")+"+\n🐳 Top 10: ≤ "+(f.maxTop10??"—")+"%\n👨‍💻 Developer: ≤ "+(f.maxDev??"—")+"%\n🧠 Smart Filters: "+(f.smart===false?"OFF":"ON")+"\n🔔 Alerts: "+(u.alerts?"Configured":"Not set");
-  await show(ctx,text,{reply_markup:new InlineKeyboard().text("✏️ EDIT SETTINGS","setup").row().text("🎯 AUTOPILOT","mode:auto").text("✋ MANUAL","mode:manual").row().text("🧾 REVIEW","review").text("🏠 MAIN MENU","menu")});
+  const mode=u.mode==="manual"?"✋ Manual":"🎯 Autopilot";
+  const text=[
+    uiHeader("TRADING CONFIGURATION","⚙️"),
+    "",
+    "Review the rules currently used for qualified calls.",
+    "",
+    uiSection("TRADE RULES","🎯"),
+    "",
+    "💰 Buy amount     "+(u.buy_amount??"Not set")+" SOL",
+    "🎯 Take profit    "+tp,
+    "🛑 Stop loss      "+(u.sl_percent??"Not set")+"%",
+    "",
+    uiSection("DISCOVERY FILTERS","🔎"),
+    "",
+    "📈 Market cap     $"+(f.minMc??"—")+" → "+(f.maxMc==null?"∞":"$"+f.maxMc),
+    "💧 Liquidity      ≥ $"+(f.minLiquidity??"—"),
+    "📊 5M volume      ≥ $"+(f.minVolume5m??"—"),
+    "⏱️ Token age      "+(f.minAgeSec??"—")+" sec → "+(f.maxAgeMin??"—")+" min",
+    "👥 Holders        ≥ "+(f.minHolders??"—"),
+    "🐳 Top 10         ≤ "+(f.maxTop10??"—")+"%",
+    "👨‍💻 Developer      ≤ "+(f.maxDev??"—")+"%",
+    "🧠 Smart filters  "+(f.smart===false?"OFF":"ON"),
+    "",
+    uiSection("STATUS","📊"),
+    "",
+    "🎯 Mode           "+mode,
+    "🔔 Alerts         "+(u.alerts?"Configured":"Not set"),
+    "",
+    "Edit any rule before activating trading.",
+    "",
+    uiFooter()
+  ].join("\n");
+  await show(ctx,text,{parse_mode:"Markdown",reply_markup:uiKeyboard([
+    [["✏️ EDIT SETTINGS","setup"]],
+    [["🚀 AUTOPILOT","mode:auto"],["✋ MANUAL","mode:manual"]],
+    [["🧾 FINAL REVIEW","review"]],
+    [["🏠 MAIN MENU","menu"]]
+  ])});
 }
 
 async function introScreen(ctx:Ctx){
