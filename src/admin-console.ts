@@ -260,9 +260,7 @@ export function registerAdminConsole(deps: AdminDeps) {
     }
 
     if (action === "health") {
-      const startedAt = new Date(Number(process.env.BOT_STARTED_AT || Date.now()));
-      const uptime = Math.max(0, Date.now() - startedAt.getTime());
-      const seconds = Math.floor(uptime / 1000);
+      const seconds = Math.floor(process.uptime());
       const hh = Math.floor(seconds / 3600);
       const mm = Math.floor((seconds % 3600) / 60);
       const ss = seconds % 60;
