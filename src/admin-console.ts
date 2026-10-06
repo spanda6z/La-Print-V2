@@ -72,7 +72,8 @@ function homeKeyboard() {
     .text("📢 BROADCAST", "admin:broadcast").text("📋 HISTORY", "admin:history").row()
     .text("⚡ TRADING", "admin:trading").text("🔎 SCANNER", "admin:scanner").row()
     .text("🚨 RISK", "admin:risk").text("🛠 SYSTEM", "admin:system").row()
-    .text("🧾 EVENTS", "admin:events").text("🔔 TEST", "admin:test").row()
+    .text("🧾 EVENTS", "admin:events").text("❤️ HEALTH", "admin:health").row()
+    .text("🔔 TEST", "admin:test").text("🔄 REFRESH", "admin:home").row()
     .text("🏠 MAIN MENU", "menu");
 }
 
@@ -181,6 +182,7 @@ export function registerAdminConsole(deps: AdminDeps) {
     }
     await ctx.answerCallbackQuery();
     const action = ctx.callbackQuery.data.slice(6);
+    try {
     await ensureAdminAuditTable(pool);
 
     if (action === "home") {
@@ -257,6 +259,34 @@ export function registerAdminConsole(deps: AdminDeps) {
       return show(ctx, "📋 *BROADCAST HISTORY*\n\n" + lines.join("\n\n"), { parse_mode: "Markdown", reply_markup: adminBack() });
     }
 
+    if (action === "health") {
+      const startedAt = new Date(Number(process.env.BOT_STARTED_AT || Date.now()));
+      const uptime = Math.max(0, Date.now() - startedAt.getTime());
+      const seconds = Math.floor(uptime / 1000);
+      const hh = Math.floor(seconds / 3600);
+      const mm = Math.floor((seconds % 3600) / 60);
+      const ss = seconds % 60;
+      let db = "❌ DOWN";
+      try {
+        await pool.query("SELECT 1");
+        db = "🟢 OK";
+      } catch {
+        db = "🔴 DOWN";
+      }
+      const engineMode = String(process.env.ENGINE_MODE || "unknown");
+      const liveTrading = String(process.env.LIVE_TRADING || "false");
+      return show(ctx,
+        "❤️ *SYSTEM HEALTH*\\n\\n" +
+        "🤖 Bot: 🟢 ONLINE\\n" +
+        "🗄 Database: " + db + "\\n" +
+        "⚙️ Engine mode: " + engineMode + "\\n" +
+        "💹 Live trading: " + liveTrading + "\\n" +
+        "⏱ Uptime: " + hh + "h " + mm + "m " + ss + "s\\n" +
+        "🛡️ Admin IDs configured: " + getAdminIds().length,
+        { parse_mode: "Markdown", reply_markup: adminBack() }
+      );
+    }
+
     if (action === "overview") {
       const r = await pool.query(`
         SELECT
@@ -314,6 +344,14 @@ export function registerAdminConsole(deps: AdminDeps) {
     }
 
     return show(ctx, "Unknown admin action.", { reply_markup: adminBack() });
+    } catch (error: any) {
+      console.error("[admin] action failed", action, error);
+      const message = String(error?.message || error).slice(0, 300);
+      return show(ctx, "⚠️ *ADMIN ACTION FAILED*\\n\\n" + message, {
+        parse_mode: "Markdown",
+        reply_markup: adminBack()
+      }).catch(() => {});
+    }
   });
 
   bot.on("message:text", async (ctx: any, next: any) => {
