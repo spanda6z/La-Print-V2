@@ -1038,6 +1038,7 @@ bot.callbackQuery(/^docs:(start|auto|manual|risk|wallets)$/,async ctx=>{
   };
   return show(ctx,[uiHeader(titles[ctx.match[1]],"📚"),"",body[ctx.match[1]],"","These guides explain the intended behavior; always review your configured values before enabling live execution.","",uiFooter()].join("\n"),{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("📚 DOCS","docs").text("❓ HELP","help").row().text("🏠 MAIN MENU","menu")});
 });
+registerAdminConsole({ bot, pool, show });
 bot.on("message:text",async ctx=>{
   if(!ctx.session.input)return;
   const raw=ctx.message.text.trim();
@@ -1077,7 +1078,6 @@ bot.on("message:text",async ctx=>{
     await patch(ctx.from!.id,{tp_config:{type:"simple",targets:[{pct:v,sellPct:100}]}});ctx.session.input=undefined;return show(ctx,"✅ TAKE PROFIT SAVED\n\n+"+v+"% → sell 100%",{reply_markup:setupKb()});
   }
 });
-registerAdminConsole({ bot, pool, show });
 registerMultiWallets({ bot, pool, show, recordAdminEvent });
 registerStrategySettings({ bot, pool, show, user, patch });
 
