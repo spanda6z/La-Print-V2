@@ -1046,7 +1046,7 @@ function isSolanaContractAddress(value:string){
 
 async function renderManualScan(ctx:Ctx,address:string){
   const result=await manualScanToken(pool,ctx.from!.id,address);
-  const c=result.candidate, r=result.result, m=scannerMarketData({market_data:c.source});
+  const c=result.candidate, r=result.result;
   const status=r.qualified?"🟢 QUALIFIED":"🔴 REJECTED";
   const reason=r.qualified?"Matches your saved strategy.":r.reasons.join(", ");
   const text=[
@@ -1103,7 +1103,7 @@ bot.on("message:text",async ctx=>{
       return ctx.reply("⚠️ *SCAN FAILED*\n\n"+reason+"\n\nNo trade was opened.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🏠 MAIN MENU","menu")});
     }
   }
-bot.on("message:text",async ctx=>{
+bot.callbackQuery(/^scan:again:([1-9A-HJ-NP-Za-km-z]{32,44})$/,async ctx=>{\n  await ctx.answerCallbackQuery("Scanning…");\n  try{return await renderManualScan(ctx,ctx.match[1]);}\n  catch(error){const reason=String((error as any)?.message||error).slice(0,300);return show(ctx,"⚠️ *SCAN FAILED*\\n\\n"+reason,{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🏠 MAIN MENU","menu")});}\n});\nbot.on("message:text",async ctx=>{
   if(!ctx.session.input)return;
   if(!ctx.session.input)return;
   const raw=ctx.message.text.trim();
