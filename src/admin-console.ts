@@ -73,7 +73,7 @@ function homeKeyboard() {
     .text("⚡ TRADING", "admin:trading").text("🔎 SCANNER", "admin:scanner").row()
     .text("🚨 RISK", "admin:risk").text("🛠 SYSTEM", "admin:system").row()
     .text("🧾 EVENTS", "admin:events").text("❤️ HEALTH", "admin:health").row()
-    .text("🔔 TEST", "admin:test").text("🔄 REFRESH", "admin:home").row()
+    .text("🏆 MILESTONES", "admin:milestones").text("🔔 TEST", "admin:test").row()
     .text("🏠 MAIN MENU", "menu");
 }
 
@@ -299,6 +299,27 @@ export function registerAdminConsole(deps: AdminDeps) {
       return show(ctx, "📊 *ADMIN OVERVIEW*\n\n👥 Users: " + x.users + "\n⚡ Active trading: " + x.active +
         "\n🚫 Disabled: " + x.disabled + "\n💰 Wallets: " + x.wallets + "\n🧾 Events 24h: " + x.events_24h +
         "\n🚨 Warnings/Critical 24h: " + x.alerts_24h, { parse_mode: "Markdown", reply_markup: adminBack() });
+    }
+
+    if (action === "milestones") {
+      const r = await pool.query(`
+        SELECT event_type, COUNT(*)::int AS count, MAX(created_at) AS latest
+        FROM public.engine_events
+        WHERE event_type LIKE 'milestone_%' AND created_at > NOW()-INTERVAL '24 hours'
+        GROUP BY event_type
+        ORDER BY MAX(created_at) DESC
+      `);
+      const total = r.rows.reduce((sum: number, row: any) => sum + Number(row.count || 0), 0);
+      const lines = r.rows.length
+        ? r.rows.map((m: any) => "• " + m.event_type.replace("milestone_","").toUpperCase() + " — " + m.count).join("\\n")
+        : "_No milestones in the last 24 hours._";
+      return show(ctx,
+        "🏆 *MILESTONE CENTER*\\n\\n" +
+        "🎉 Achievements sent (24h): " + total + "\\n\\n" +
+        lines +
+        "\\n\\n*Recent achievement activity is recorded automatically.*",
+        { parse_mode: "Markdown", reply_markup: adminBack() }
+      );
     }
 
     if (action === "trading") {
