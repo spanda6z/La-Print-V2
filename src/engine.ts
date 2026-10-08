@@ -260,10 +260,12 @@ async function sendMilestoneFeedback(pool:Pool,bot:BotLike,position:any,gainPct:
       "",
       "📈 Performance: *"+multiple+"x*",
       "💹 Current move: *"+formatPct(gainPct)+"*",
+      "💰 Position P&L: *"+formatSol((Number(position.sol_spent||0)*gainPct/100))+"* estimated",
       "",
       multiple===2?"🎯 2x reached. Strong move.":multiple===5?"🚀 5x reached. Major milestone.":multiple===10?"🏆 10x reached. Exceptional run.":multiple===25?"💎 25x reached. Elite milestone.":multiple===35?"👑 35x reached. Massive milestone.":multiple===50?"🔥 50x reached. Historic move.":"🚀 100x reached. Extraordinary move.",
       "",
-      "La-Print is tracking the position automatically."
+      "🏅 Milestone recorded to your La-Print trading history.",
+      "🛡️ Position monitoring remains active."
     ].join("\n"),{parse_mode:"Markdown"});
   }
 }
