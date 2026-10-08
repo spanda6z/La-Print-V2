@@ -642,6 +642,30 @@ export async function startEngine(pool:Pool,bot:BotLike) {
     void lockClient.query("SELECT pg_advisory_unlock($1)",[lockKey]).finally(()=>lockClient.release());
   };
 }
+export async function manualScanToken(pool:Pool,telegramId:number,address:string){
+  if(!process.env.BIRDEYE_API_KEY) throw new Error("Scanner enrichment is not configured.");
+  try{ new PublicKey(address); }catch{ throw new Error("That does not look like a valid Solana contract address."); }
+  const u=await pool.query("SELECT telegram_id,strategy_profile,strategy_config,buy_amount,sl_percent,tp_config FROM public.users WHERE telegram_id=$1 LIMIT 1",[telegramId]);
+  if(!u.rowCount) throw new Error("Your LA-PRINT account is not ready for a scan.");
+  const row=u.rows[0];
+  const strategy=await getStrategy(row);
+  const ov=await overview(address);
+  const security=await mintSecurity(address);
+  const candidate=mapCandidate({address},ov,security);
+  if(!candidate.address) throw new Error("Token data could not be loaded.");
+  const result=evaluateCandidate(candidate,strategy);
+  await pool.query(
+    "INSERT INTO public.engine_candidates(address,symbol,name,market_data,status,reject_reason,last_seen) VALUES($1,$2,$3,$4,$5,$6,NOW()) ON CONFLICT(address) DO UPDATE SET symbol=EXCLUDED.symbol,name=EXCLUDED.name,market_data=EXCLUDED.market_data,status=EXCLUDED.status,reject_reason=EXCLUDED.reject_reason,last_seen=NOW()",
+    [candidate.address,candidate.symbol,candidate.name,candidate.source,result.qualified?"qualified":"rejected",result.qualified?null:result.reasons.join(", ")]
+  );
+  await pool.query(
+    "INSERT INTO public.engine_candidate_users(telegram_id,address,status,reject_reason,strategy_profile,evaluated_at) VALUES($1,$2,$3,$4,$5,NOW()) ON CONFLICT(telegram_id,address) DO UPDATE SET status=EXCLUDED.status,reject_reason=EXCLUDED.reject_reason,strategy_profile=EXCLUDED.strategy_profile,evaluated_at=NOW()",
+    [telegramId,candidate.address,result.qualified?"qualified":"rejected",result.qualified?null:result.reasons.join(", "),strategy.profile||row.strategy_profile||"balanced"]
+  );
+  await saveEvent(pool,telegramId,"manual_scan",address,{qualified:result.qualified,reasons:result.reasons});
+  return {candidate,result,strategy};
+}
+
 export async function getScannerView(pool:Pool,telegramId:number,status:"all"|"qualified"|"rejected"="all",offset=0) {
   const condition=status==="all"?"":" AND ecu.status=$2";
   const limitParam=status==="all"?"$2":"$3";
