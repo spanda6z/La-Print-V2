@@ -663,7 +663,7 @@ export async function manualScanToken(pool:Pool,telegramId:number,address:string
     [telegramId,candidate.address,result.qualified?"qualified":"rejected",result.qualified?null:result.reasons.join(", "),strategy.profile||row.strategy_profile||"balanced"]
   );
   await saveEvent(pool,telegramId,"manual_scan",address,{qualified:result.qualified,reasons:result.reasons});
-  return {candidate,result,strategy};
+  return {candidate,result,strategy,mode:String(row.mode||"manual")};
 }
 
 export async function getScannerView(pool:Pool,telegramId:number,status:"all"|"qualified"|"rejected"="all",offset=0) {
