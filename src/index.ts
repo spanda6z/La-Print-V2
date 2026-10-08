@@ -1064,10 +1064,10 @@ async function renderManualScan(ctx:Ctx,address:string){
     "",
     uiSection("MARKET","📊"),
     "",
-    "💵 Market Cap   "+scannerMoney(c.marketCap),
-    "💧 Liquidity    "+scannerMoney(c.liquidity),
-    "📈 5m Volume    "+scannerMoney(c.volume5m),
-    "👥 Holders      "+scannerNum(c.holders),
+    "💵 Market Cap   "+(c.marketCap==null?"—":"$"+Math.round(c.marketCap).toLocaleString()),
+    "💧 Liquidity    "+(c.liquidity==null?"—":"$"+Math.round(c.liquidity).toLocaleString()),
+    "📈 5m Volume    "+(c.volume5m==null?"—":"$"+Math.round(c.volume5m).toLocaleString()),
+    "👥 Holders      "+(c.holders==null?"—":c.holders.toLocaleString()),
     "🐳 Top 10       "+(c.top10==null?"—":c.top10+"%"),
     "👨‍💻 Dev          "+(c.devPct==null?"—":c.devPct+"%"),
     "💰 Price        "+(c.price==null?"—":String(c.price)),
@@ -1085,7 +1085,7 @@ async function renderManualScan(ctx:Ctx,address:string){
     uiFooter()
   ].join("\n");
   const k=new InlineKeyboard().text("🔄 SCAN AGAIN","scan:again:"+address);
-  if(r.qualified && (await user(ctx.from!.id,ctx.from!.username)).mode==="manual"){
+  if(r.qualified && result.mode==="manual"){
     k.row().text("🟢 APPROVE TRADE","call:approve:"+address).text("❌ REJECT","call:reject:"+address);
   }
   k.row().text("📡 DISCOVER","discover").text("🏠 MAIN MENU","menu");
