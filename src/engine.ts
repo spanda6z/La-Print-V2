@@ -240,6 +240,34 @@ async function saveEvent(pool:Pool,id:number|null,type:string,address:string|nul
 }
 
 
+
+async function sendMilestoneFeedback(pool:Pool,bot:BotLike,position:any,gainPct:number){
+  if(!bot || !Number.isFinite(gainPct) || gainPct < 100) return;
+  const milestones=[2,5,10,25,35,50,100];
+  const reached=milestones.filter(x=>gainPct >= (x-1)*100);
+  for(const multiple of reached){
+    const marker="milestone_"+multiple+"x";
+    const seen=await pool.query(
+      "SELECT 1 FROM public.engine_events WHERE telegram_id=$1 AND token_address=$2 AND event_type=$3 AND (details->>'positionId')=$4 LIMIT 1",
+      [position.telegram_id,position.token_address,marker,String(position.id)]
+    );
+    if(seen.rowCount) continue;
+    await saveEvent(pool,Number(position.telegram_id),marker,position.token_address,{positionId:position.id,multiple,gainPct});
+    const emoji=multiple>=25?"🏆":multiple>=10?"🚀":"🔥";
+    await bot.api.sendMessage(position.telegram_id,[
+      emoji+" *MILESTONE ACHIEVED*","",
+      "🔥 *"+(position.symbol||"TOKEN")+"*",
+      "",
+      "📈 Performance: *"+multiple+"x*",
+      "💹 Current move: *"+formatPct(gainPct)+"*",
+      "",
+      multiple===2?"🎯 2x reached. Strong move.":multiple===5?"🚀 5x reached. Major milestone.":multiple===10?"🏆 10x reached. Exceptional run.":multiple===25?"💎 25x reached. Elite milestone.":multiple===35?"👑 35x reached. Massive milestone.":multiple===50?"🔥 50x reached. Historic move.":"🚀 100x reached. Extraordinary move.",
+      "",
+      "La-Print is tracking the position automatically."
+    ].join("\n"),{parse_mode:"Markdown"});
+  }
+}
+
 function formatUsd(v:number|null){return v==null?"—":"$"+Math.round(v).toLocaleString();}
 function formatPct(v:any){const n=Number(v);return Number.isFinite(n)?(n>=0?"+":"")+n.toFixed(1)+"%":"—";}
 function formatSol(v:any){const n=Number(v);return Number.isFinite(n)?n.toFixed(4)+" SOL":"—";}
@@ -557,6 +585,7 @@ async function monitorPositions(pool:Pool,bot?:BotLike) {
         const pullback=((mark.priceSol-high)/high)*100;
         if(pullback<=-Math.abs(Number(cfg.trailing.pullbackPct))) reason="TRAILING STOP";
       }
+      await sendMilestoneFeedback(pool,bot,position,gain);
       if(reason){
         const sellPct=target?Math.min(100,Number(target.sellPct)):100;
         const remainingRaw=BigInt(String(position.remaining_amount||"0"));
