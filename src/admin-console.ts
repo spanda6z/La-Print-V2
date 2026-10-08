@@ -302,6 +302,58 @@ export function registerAdminConsole(deps: AdminDeps) {
     }
 
     if (action === "trading") {
+      const r = await pool.query(`
+        SELECT
+          (SELECT COUNT(*) FROM public.engine_positions WHERE status='open') open_positions,
+          (SELECT COUNT(*) FROM public.engine_positions WHERE created_at > NOW()-INTERVAL '24 hours') entries_24h,
+          (SELECT COUNT(*) FROM public.engine_positions WHERE closed_at > NOW()-INTERVAL '24 hours') exits_24h,
+          (SELECT COALESCE(SUM(realized_pnl_sol),0) FROM public.engine_positions WHERE closed_at > NOW()-INTERVAL '24 hours') pnl_24h,
+          (SELECT COUNT(*) FROM public.trade_intents WHERE created_at > NOW()-INTERVAL '24 hours' AND status IN ('failed','unknown')) failed_24h,
+          (SELECT COUNT(*) FROM public.trade_intents WHERE created_at > NOW()-INTERVAL '24 hours') intents_24h
+      `);
+      const x = r.rows[0];
+      const recent = await pool.query(`
+        SELECT id,telegram_id,token_address,side,status,signature,updated_at
+        FROM public.trade_intents ORDER BY updated_at DESC LIMIT 8
+      `);
+      const lines = recent.rows.length
+        ? recent.rows.map((t: any) => "• #" + String(t.id).slice(0,8) + " · " + t.side.toUpperCase() + " · " + t.status + " · " + String(t.token_address).slice(0,8) + "…").join("\\n")
+        : "_No recent trade intents._";
+      return show(ctx,
+        "⚡ *TRADING MONITOR*\\n\\n" +
+        "📂 Open positions: " + x.open_positions + "\\n" +
+        "🟢 Entries 24h: " + x.entries_24h + "\\n" +
+        "🔴 Exits 24h: " + x.exits_24h + "\\n" +
+        "💰 Realized P&L 24h: " + Number(x.pnl_24h || 0).toFixed(4) + " SOL\\n" +
+        "📡 Trade intents 24h: " + x.intents_24h + "\\n" +
+        "❌ Failed/unknown 24h: " + x.failed_24h + "\\n\\n" +
+        "*RECENT INTENTS*\\n" + lines,
+        { parse_mode: "Markdown", reply_markup: adminBack() }
+      );
+    }
+
+    if (action === "scanner") {
+      const r = await pool.query(`
+        SELECT
+          (SELECT COUNT(*) FROM public.engine_candidates) total_candidates,
+          (SELECT COUNT(*) FROM public.engine_candidates WHERE last_seen > NOW()-INTERVAL '1 hour') seen_1h,
+          (SELECT COUNT(*) FROM public.engine_candidates WHERE status='qualified') qualified,
+          (SELECT COUNT(*) FROM public.engine_candidate_users WHERE evaluated_at > NOW()-INTERVAL '24 hours') evaluations_24h,
+          (SELECT COUNT(*) FROM public.engine_candidate_users WHERE status='rejected' AND evaluated_at > NOW()-INTERVAL '24 hours') rejected_24h
+      `);
+      const x = r.rows[0];
+      return show(ctx,
+        "🔎 *SCANNER MONITOR*\\n\\n" +
+        "🧿 Candidates stored: " + x.total_candidates + "\\n" +
+        "🕐 Seen in last hour: " + x.seen_1h + "\\n" +
+        "✅ Qualified: " + x.qualified + "\\n" +
+        "🧪 Evaluations 24h: " + x.evaluations_24h + "\\n" +
+        "🚫 Rejected 24h: " + x.rejected_24h,
+        { parse_mode: "Markdown", reply_markup: adminBack() }
+      );
+    }
+
+
       const r = await pool.query("SELECT telegram_id,event_type,severity,payload,created_at FROM public.admin_events WHERE event_type IN ('trading_started','trading_stopped','risk_event') ORDER BY created_at DESC LIMIT 10");
       return renderRows(ctx, "⚡ *TRADING ACTIVITY*", r.rows, adminBack(), true);
     }
