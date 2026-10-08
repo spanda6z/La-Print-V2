@@ -8,7 +8,7 @@ import { notifyAdmin, getAdminIds } from "./admin-notifications.js";
 import { registerAdminConsole, recordAdminEvent } from "./admin-console.js";
 import { registerStrategySettings } from "./settings-v2.js";
 import { registerMultiWallets, ensureMultiWalletSchema } from "./multi-wallets.js";
-import { ensureEngineSchema, startEngine, getScannerView, getScannerToken, executeQualifiedEntry } from "./engine.js";
+import { ensureEngineSchema, startEngine, getScannerView, getScannerToken, executeQualifiedEntry, manualScanToken } from "./engine.js";
 import { uiHeader, uiSection, uiFooter, uiKeyboard, mainMenuKeyboard, navigationKeyboard } from "./ui.js";
 
 const { Pool } = pg;
@@ -1039,7 +1039,72 @@ bot.callbackQuery(/^docs:(start|auto|manual|risk|wallets)$/,async ctx=>{
   return show(ctx,[uiHeader(titles[ctx.match[1]],"📚"),"",body[ctx.match[1]],"","These guides explain the intended behavior; always review your configured values before enabling live execution.","",uiFooter()].join("\n"),{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("📚 DOCS","docs").text("❓ HELP","help").row().text("🏠 MAIN MENU","menu")});
 });
 registerAdminConsole({ bot, pool, show });
+
+function isSolanaContractAddress(value:string){
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value);
+}
+
+async function renderManualScan(ctx:Ctx,address:string){
+  const result=await manualScanToken(pool,ctx.from!.id,address);
+  const c=result.candidate, r=result.result, m=scannerMarketData({market_data:c.source});
+  const status=r.qualified?"🟢 QUALIFIED":"🔴 REJECTED";
+  const reason=r.qualified?"Matches your saved strategy.":r.reasons.join(", ");
+  const text=[
+    uiHeader("MANUAL SCAN","🔎"),
+    "",
+    "Token contract scanned against your current LA-PRINT discovery and safety rules.",
+    "",
+    uiSection("TOKEN","🪙"),
+    "",
+    "🔥 *"+(c.symbol||"UNKNOWN")+"*",
+    c.name||"Unknown token",
+    "",
+    "📍 CA",
+    "`"+c.address+"`",
+    "",
+    uiSection("MARKET","📊"),
+    "",
+    "💵 Market Cap   "+scannerMoney(c.marketCap),
+    "💧 Liquidity    "+scannerMoney(c.liquidity),
+    "📈 5m Volume    "+scannerMoney(c.volume5m),
+    "👥 Holders      "+scannerNum(c.holders),
+    "🐳 Top 10       "+(c.top10==null?"—":c.top10+"%"),
+    "👨‍💻 Dev          "+(c.devPct==null?"—":c.devPct+"%"),
+    "💰 Price        "+(c.price==null?"—":String(c.price)),
+    "",
+    uiSection("SCAN RESULT","🛡️"),
+    "",
+    "Status: "+status,
+    "Result: "+reason,
+    "Mint: "+(c.security.mintAuthority==="REVOKED"?"✅ Disabled":c.security.mintAuthority),
+    "Freeze: "+(c.security.freezeAuthority==="REVOKED"?"✅ Disabled":c.security.freezeAuthority),
+    "Data: "+(c.security.verified?"✅ Verified":"⚠️ Unverified"),
+    "",
+    "⚠️ A manual scan is analysis only. No trade was opened automatically.",
+    "",
+    uiFooter()
+  ].join("\n");
+  const k=new InlineKeyboard().text("🔄 SCAN AGAIN","scan:again:"+address);
+  if(r.qualified && (await user(ctx.from!.id,ctx.from!.username)).mode==="manual"){
+    k.row().text("🟢 APPROVE TRADE","call:approve:"+address).text("❌ REJECT","call:reject:"+address);
+  }
+  k.row().text("📡 DISCOVER","discover").text("🏠 MAIN MENU","menu");
+  return show(ctx,text,{parse_mode:"Markdown",reply_markup:k});
+}
+
 bot.on("message:text",async ctx=>{
+  const raw=ctx.message.text.trim();
+  if(!ctx.session.input && isSolanaContractAddress(raw)){
+    try{
+      await ctx.reply("🔎 *LA-PRINT MANUAL SCAN*\n\nScanning the contract against your saved filters and safety checks…",{parse_mode:"Markdown"});
+      return await renderManualScan(ctx,raw);
+    }catch(error){
+      const reason=String((error as any)?.message||error).slice(0,300);
+      return ctx.reply("⚠️ *SCAN FAILED*\n\n"+reason+"\n\nNo trade was opened.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🏠 MAIN MENU","menu")});
+    }
+  }
+bot.on("message:text",async ctx=>{
+  if(!ctx.session.input)return;
   if(!ctx.session.input)return;
   const raw=ctx.message.text.trim();
   if(ctx.session.input==="wallet_import"){
