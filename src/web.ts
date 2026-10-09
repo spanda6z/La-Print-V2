@@ -26,7 +26,7 @@ function send(res: ServerResponse, status: number, body: string, contentType = "
     "cache-control": "no-store",
     "x-content-type-options": "nosniff",
     "referrer-policy": "no-referrer",
-    "content-security-policy": "default-src 'self'; script-src 'self' https://telegram.org 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https://*.telegram.org data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+    "content-security-policy": "default-src 'self'; script-src 'self' https://telegram.org 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https://*.telegram.org data:; connect-src 'self'; frame-src 'self' https://oauth.telegram.org https://telegram.org; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
   });
   res.end(body);
 }
