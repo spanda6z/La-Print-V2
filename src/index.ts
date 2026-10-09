@@ -1166,7 +1166,7 @@ await databaseSmokeTest();
 await bot.api.setMyCommands([{command:"start",description:"Open LaPrint"},{command:"menu",description:"Main menu"},{command:"setup",description:"Trade Autopilot setup"},{command:"strategy",description:"Advanced strategy settings"},{command:"mode",description:"Switch mode"},{command:"wallets",description:"Manage trading wallets"},{command:"admin",description:"Open admin control center"}]);
 console.log("LaPrint V2 starting. ENGINE_MODE="+(process.env.ENGINE_MODE||"disabled"));
 const stopEngine = await startEngine(pool,bot);
-const stopWebServer = startWebServer(pool);
+const stopWebServer = startWebServer(pool,bot);
 const pollingClient = await acquireTelegramPollingLock();
 let shuttingDown = false;
 const shutdown = async (signal: string) => {
