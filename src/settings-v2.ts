@@ -270,7 +270,6 @@ export async function updateStrategyFromWeb(bot: any, pool: any, telegramId: num
     const amount = Number(input.buyAmountSol);
     if (![0.01, 0.05, 0.1, 0.25, 0.5, 1].includes(amount)) throw new Error("Choose a supported buy amount.");
     next.execution.buyAmountSol = amount;
-    next.execution.maxBuyAmountSol = Math.max(Number(next.execution.maxBuyAmountSol || 0), amount);
     customizedChange = true;
   }
   if (input.stopLossPct !== undefined) {
