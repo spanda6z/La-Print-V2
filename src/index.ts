@@ -10,6 +10,7 @@ import { registerStrategySettings } from "./settings-v2.js";
 import { registerMultiWallets, ensureMultiWalletSchema } from "./multi-wallets.js";
 import { ensureEngineSchema, startEngine, getScannerView, getScannerToken, executeQualifiedEntry, manualScanToken } from "./engine.js";
 import { uiHeader, uiSection, uiFooter, uiKeyboard, mainMenuKeyboard, navigationKeyboard } from "./ui.js";
+import { startWebServer } from "./web.js";
 
 const { Pool } = pg;
 const token = process.env.BOT_TOKEN ?? process.env.TELEGRAM_BOT_TOKEN;
@@ -1110,7 +1111,13 @@ bot.on("message:text",async ctx=>{
       return ctx.reply("⚠️ *SCAN FAILED*\n\n"+reason+"\n\nNo trade was opened.",{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🏠 MAIN MENU","menu")});
     }
   }
-bot.callbackQuery(/^scan:again:([1-9A-HJ-NP-Za-km-z]{32,44})$/,async ctx=>{\n  await ctx.answerCallbackQuery("Scanning…");\n  try{return await renderManualScan(ctx,ctx.match[1]);}\n  catch(error){const reason=String((error as any)?.message||error).slice(0,300);return show(ctx,"⚠️ *SCAN FAILED*\\n\\n"+reason,{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🏠 MAIN MENU","menu")});}\n});\nbot.on("message:text",async ctx=>{
+});
+bot.callbackQuery(/^scan:again:([1-9A-HJ-NP-Za-km-z]{32,44})$/,async ctx=>{
+  await ctx.answerCallbackQuery("Scanning…");
+  try{return await renderManualScan(ctx,ctx.match[1]);}
+  catch(error){const reason=String((error as any)?.message||error).slice(0,300);return show(ctx,"⚠️ *SCAN FAILED*\\n\\n"+reason,{parse_mode:"Markdown",reply_markup:new InlineKeyboard().text("🏠 MAIN MENU","menu")});}
+});
+bot.on("message:text",async ctx=>{
   if(!ctx.session.input)return;
   if(!ctx.session.input)return;
   const raw=ctx.message.text.trim();
@@ -1159,6 +1166,7 @@ await databaseSmokeTest();
 await bot.api.setMyCommands([{command:"start",description:"Open LaPrint"},{command:"menu",description:"Main menu"},{command:"setup",description:"Trade Autopilot setup"},{command:"strategy",description:"Advanced strategy settings"},{command:"mode",description:"Switch mode"},{command:"wallets",description:"Manage trading wallets"},{command:"admin",description:"Open admin control center"}]);
 console.log("LaPrint V2 starting. ENGINE_MODE="+(process.env.ENGINE_MODE||"disabled"));
 const stopEngine = await startEngine(pool,bot);
+const stopWebServer = startWebServer(pool,bot);
 const pollingClient = await acquireTelegramPollingLock();
 let shuttingDown = false;
 const shutdown = async (signal: string) => {
@@ -1167,6 +1175,7 @@ const shutdown = async (signal: string) => {
   console.log("[shutdown] received " + signal);
   bot.stop();
   stopEngine();
+  stopWebServer();
   try { await pollingClient.query("SELECT pg_advisory_unlock($1)", [TELEGRAM_POLL_LOCK]); } catch {}
   pollingClient.release();
   await pool.end();

@@ -231,6 +231,65 @@ async function save(deps: Deps, id: number, c: StrategyConfig, customized = c.cu
   return next;
 }
 
+export async function updateStrategyFromWeb(bot: any, pool: any, telegramId: number, input: any) {
+  const allowedFields = new Set(["strategy_profile","strategy_customized","strategy_version","strategy_config","buy_amount","tp_config","sl_percent","filters"]);
+  const deps: Deps = {
+    bot,
+    pool,
+    show: async () => undefined,
+    user: async (id: number) => {
+      const result = await pool.query("SELECT * FROM public.users WHERE telegram_id=$1 LIMIT 1", [id]);
+      if (!result.rowCount) throw new Error("La-Print account not found.");
+      return result.rows[0];
+    },
+    patch: async (id: number, fields: Record<string, unknown>) => {
+      const entries = Object.entries(fields).filter(([key]) => allowedFields.has(key));
+      if (entries.length !== Object.keys(fields).length) throw new Error("Unsupported strategy fields.");
+      if (!entries.length) return deps.user(id);
+      const sets = entries.map(([key], index) => key + "=$" + (index + 2)).join(",");
+      await pool.query("UPDATE public.users SET " + sets + ",updated_at=NOW() WHERE telegram_id=$1", [id, ...entries.map(([, value]) => value)]);
+      return deps.user(id);
+    }
+  };
+  const current = await load(deps, telegramId);
+  let next: StrategyConfig = clone(current);
+  let profileChanged = false;
+  let customized = true;
+  if (input.profile !== undefined) {
+    if (typeof input.profile !== "string" || !Object.prototype.hasOwnProperty.call(PRESETS, input.profile)) {
+      throw new Error("Choose a valid strategy profile.");
+    }
+    if (input.profile !== current.profile) {
+      next = { ...clone(PRESETS[input.profile]), version: current.version + 1, customized: false };
+      profileChanged = true;
+      customized = false;
+    }
+  }
+  let customizedChange = false;
+  if (input.buyAmountSol !== undefined) {
+    const amount = Number(input.buyAmountSol);
+    if (![0.01, 0.05, 0.1, 0.25, 0.5, 1].includes(amount)) throw new Error("Choose a supported buy amount.");
+    next.execution.buyAmountSol = amount;
+    customizedChange = true;
+  }
+  if (input.stopLossPct !== undefined) {
+    const stopLoss = Number(input.stopLossPct);
+    if (![-10, -15, -20, -25].includes(stopLoss)) throw new Error("Choose a supported stop-loss value.");
+    next.execution.stopLossPct = stopLoss;
+    customizedChange = true;
+  }
+  if (input.trailingEnabled !== undefined) {
+    if (typeof input.trailingEnabled !== "boolean") throw new Error("Trailing-stop value must be true or false.");
+    next.execution.trailing.enabled = input.trailingEnabled;
+    customizedChange = true;
+  }
+  if (!profileChanged && !customizedChange && input.profile === undefined) {
+    throw new Error("No supported strategy changes were supplied.");
+  }
+  if (customizedChange) customized = true;
+  return save(deps, telegramId, next, customized);
+}
+
 export async function openStrategySettings(ctx: any, deps: Deps) {
   const c = await load(deps, ctx.from.id);
   await deps.show(ctx, summary(c), {parse_mode:"Markdown", reply_markup:settingsKeyboard(c)});

@@ -373,15 +373,6 @@ export function registerAdminConsole(deps: AdminDeps) {
         { parse_mode: "Markdown", reply_markup: adminBack() }
       );
     }
-
-
-      const r = await pool.query("SELECT telegram_id,event_type,severity,payload,created_at FROM public.admin_events WHERE event_type IN ('trading_started','trading_stopped','risk_event') ORDER BY created_at DESC LIMIT 10");
-      return renderRows(ctx, "⚡ *TRADING ACTIVITY*", r.rows, adminBack(), true);
-    }
-    if (action === "scanner") {
-      const r = await pool.query("SELECT telegram_id,event_type,severity,payload,created_at FROM public.admin_events WHERE event_type IN ('system_error','risk_event') AND payload::text ILIKE '%scanner%' ORDER BY created_at DESC LIMIT 10");
-      return renderRows(ctx, "🔎 *SCANNER EVENTS*", r.rows, adminBack(), true);
-    }
     if (action === "risk") {
       const r = await pool.query("SELECT telegram_id,event_type,severity,payload,created_at FROM public.admin_events WHERE event_type='risk_event' ORDER BY created_at DESC LIMIT 10");
       return renderRows(ctx, "🚨 *RISK EVENTS*", r.rows, adminBack(), true);

@@ -50,3 +50,18 @@ Set `BIRDEYE_API_KEY` and `SOLANA_RPC_URL` to enable the discovery worker. Set `
 - `LIVE_TRADING_SIMULATION_ONLY=false`
 
 **Important:** automatic entry scheduling, token-account reconciliation, automated sell execution, and realized/unrealized PnL reconciliation are not yet complete. The engine must remain in discovery/monitoring mode until those modules are implemented and tested. Do not enable live trading based on this foundation alone.
+
+## Shared web terminal
+
+The same Node process can serve the La-Print web terminal alongside the Telegram bot. The web terminal reads the existing PostgreSQL user, wallet-public-address, strategy, position, and engine-activity records; it does not create a second trading account or trading engine.
+
+### Web terminal environment
+
+- `BOT_USERNAME`: Telegram bot username without the `@` sign. Configure the Telegram Login Widget domain in BotFather for the deployed web domain.
+- `WEB_SESSION_SECRET`: a random secret of at least 32 characters used to sign HttpOnly web sessions.
+- `PORT`: supplied by Railway or another host; defaults to 3000 locally.
+- `SOLANA_RPC_URL`: optional for live SOL balance display. If missing or unavailable, balances are shown as unavailable rather than invented.
+
+After deploying, open the service's public URL. Sign in using the same Telegram account that completed La-Print onboarding. The server verifies Telegram's signed login payload and maps the account to the existing `telegram_id`; it never accepts a Telegram ID supplied by the browser as identity. The web API only returns public wallet addresses and account/position settings; encrypted wallet secrets and private keys are never returned to the browser.
+
+**Current scope:** account dashboard plus validated shared strategy edits (profile, buy amount, stop loss, and trailing-stop toggle). Edits use the same strategy save path as Telegram, including strategy versioning and the existing `strategy_changed` admin event. Web buy/sell actions are not enabled yet. The repository documents that automated entry scheduling and position reconciliation are still incomplete, so live web trading must not be enabled until those paths are completed and tested. `src/admin-notifications.ts` is unchanged; the existing wallet notification flow is untouched.
