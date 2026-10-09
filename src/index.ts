@@ -23,16 +23,23 @@ const bot = new Bot<Ctx>(token);
 function terminalHeader(screen: string) { return "🚀 *LA-PRINT ┃ " + screen + "*\\n━━━━━━━━━━━━━━━━━━━━"; }
 function terminalSection(label: string) { return "▸ " + label.toUpperCase(); }
 function terminalAction(label: string, tone: "primary"|"success"|"danger" = "primary") { return (tone==="success"?"🟢":tone==="danger"?"🔴":"🔵")+" ⟪ "+label+" ⟫"; }
+function styleBotMessage(message: string) {
+  const opening = message.split("\n").slice(0, 3).join("\n");
+  if (/LA[\s-]?PRINT/i.test(opening)) return message;
+  return "⚡ *LA-PRINT ┃ TERMINAL*\\n━━━━━━━━━━━━━━━━━━━━\\n\\n" + message;
+}
+
 async function show(ctx: Ctx, message: string, extra: any = {}) {
+  const styledMessage = styleBotMessage(message);
   if (ctx.callbackQuery && "message" in ctx.callbackQuery && ctx.callbackQuery.message) {
-    try { return await ctx.editMessageText(message, extra); }
+    try { return await ctx.editMessageText(styledMessage, extra); }
     catch (error) {
       const description = String((error as any)?.description || (error as any)?.message || error);
       if (description.includes("message is not modified")) return;
       if (!description.includes("message to edit") && !description.includes("can't be edited") && !description.includes("message can't be edited")) throw error;
     }
   }
-  return ctx.reply(message, extra);
+  return ctx.reply(styledMessage, extra);
 }
 bot.use(session({ initial: (): Session => ({}) }));
 bot.use(async (ctx: Ctx, next) => {
