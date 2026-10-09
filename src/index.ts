@@ -26,7 +26,7 @@ function terminalAction(label: string, tone: "primary"|"success"|"danger" = "pri
 function styleBotMessage(message: string) {
   const opening = message.split("\n").slice(0, 3).join("\n");
   if (/LA[\s-]?PRINT/i.test(opening)) return message;
-  return "⚡ *LA-PRINT ┃ TERMINAL*\\n━━━━━━━━━━━━━━━━━━━━\\n\\n" + message;
+  return "⚡ *LA-PRINT ┃ TERMINAL*\n━━━━━━━━━━━━━━━━━━━━\n\n" + message;
 }
 
 async function show(ctx: Ctx, message: string, extra: any = {}) {
