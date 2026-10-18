@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo } from "node:net";
 import { Connection, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { updateStrategyFromWeb } from "./settings-v2.js";
+import { supportChatReply, type SupportMessage } from "./support-chat.js";
 
 type Pool = { query: (sql: string, params?: unknown[]) => Promise<any> };
 
@@ -116,6 +117,7 @@ function page(botUsername: string, configured: boolean) {
 <style>
 :root{color-scheme:dark;--bg:#090b10;--panel:#11151e;--line:#242b38;--muted:#8e9aaf;--text:#eef2fa;--green:#48e0a4;--blue:#83a9ff;--amber:#f4c66b;--red:#ff8585}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 15% 0%,#172033 0,transparent 45%),var(--bg);color:var(--text);font:14px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,sans-serif}select{display:block;width:100%;margin-top:6px;padding:10px;border:1px solid var(--line);border-radius:9px;background:#0c1018;color:var(--text)}input[type=checkbox]{accent-color:var(--green);margin-right:8px}button{font:inherit;cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:10px 14px;background:#1a2231;color:var(--text)}button:hover{border-color:#5d76a8}.shell{max-width:1240px;margin:auto;padding:24px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:26px}.brand{display:flex;align-items:center;gap:12px;font-weight:800;letter-spacing:.12em}.logo{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,#83a9ff,#48e0a4);color:#081018;display:grid;place-items:center;font-size:18px}.eyebrow{font-size:11px;color:var(--muted);letter-spacing:.16em;text-transform:uppercase}.pill{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:99px;padding:6px 10px;color:var(--muted);font-size:12px}.dot{width:7px;height:7px;border-radius:50%;background:var(--green)}h1{font-size:clamp(26px,4vw,38px);line-height:1.12;margin:8px 0}h2{font-size:15px;margin:0 0 15px}.muted{color:var(--muted)}.layout{display:grid;grid-template-columns:1fr 1fr;gap:16px}.panel{border:1px solid var(--line);border-radius:16px;background:linear-gradient(145deg,rgba(22,28,40,.96),rgba(14,17,25,.96));padding:20px;min-width:0}.wide{grid-column:1/-1}.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:22px 0}.stat{background:#0c1018;border:1px solid var(--line);border-radius:12px;padding:14px}.stat .value{font-size:22px;font-weight:750;margin-top:5px;overflow-wrap:anywhere}.value.green{color:var(--green)}.value.blue{color:var(--blue)}.row{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid rgba(36,43,56,.8)}.row:last-child{border-bottom:0}.row span:first-child{color:var(--muted)}.empty{padding:20px;text-align:center;border:1px dashed var(--line);border-radius:12px;color:var(--muted)}.notice{padding:14px;border:1px solid #65522c;background:#2b2415;border-radius:12px;color:#f4dba8}.signin{max-width:540px;margin:10vh auto}.signin .panel{padding:30px}.error{color:var(--red);margin-top:12px}.token{font-family:ui-monospace,monospace;overflow-wrap:anywhere}.tablewrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:520px}th,td{text-align:left;padding:12px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.1em}.badge{font-size:11px;border:1px solid var(--line);padding:3px 8px;border-radius:99px}.foot{margin-top:22px;color:var(--muted);font-size:12px;text-align:center}.hidden{display:none!important}@media(max-width:760px){.shell{padding:16px}.layout{grid-template-columns:1fr}.wide{grid-column:auto}.stats{grid-template-columns:1fr 1fr}.top{align-items:flex-start}.top .pill{display:none}.panel{padding:16px}.signin{margin:5vh auto}.signin .panel{padding:22px}}
+.support-launch{position:fixed;right:22px;bottom:22px;z-index:1000;border:0;border-radius:999px;padding:14px 18px;background:linear-gradient(135deg,#83a9ff,#48e0a4);color:#071018;font-weight:800;box-shadow:0 12px 36px #0008}.support-panel{position:fixed;right:22px;bottom:84px;z-index:1000;width:min(390px,calc(100vw - 28px));height:min(560px,calc(100dvh - 120px));display:flex;flex-direction:column;border:1px solid #303a4b;border-radius:18px;background:#0e121b;box-shadow:0 24px 70px #000a;overflow:hidden}.support-panel.hidden{display:none!important}.support-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;background:#151c29;border-bottom:1px solid var(--line)}.support-head strong{display:block}.support-head small{color:var(--muted)}.support-close{padding:5px 10px}.support-messages{flex:1;overflow:auto;display:flex;flex-direction:column;gap:10px;padding:14px}.support-bubble{max-width:90%;white-space:pre-wrap;overflow-wrap:anywhere;padding:10px 12px;border-radius:13px;background:#1a2231;color:var(--text);font-size:13px}.support-bubble.user{align-self:flex-end;background:#203c38;border:1px solid #2c6255}.support-bubble.assistant{align-self:flex-start}.support-compose{display:flex;gap:8px;padding:12px;border-top:1px solid var(--line)}.support-compose input{min-width:0;flex:1;border:1px solid var(--line);border-radius:10px;background:#090d14;color:var(--text);padding:11px}.support-compose button{background:#48e0a4;color:#071018;font-weight:750}.support-hint{padding:0 14px 10px;color:var(--muted);font-size:11px}@media(max-width:480px){.support-launch{right:14px;bottom:14px}.support-panel{right:10px;bottom:74px;width:calc(100vw - 20px);height:min(570px,calc(100dvh - 92px))}
 </style>
 </head>
 <body><main class="shell">
@@ -133,6 +135,7 @@ function page(botUsername: string, configured: boolean) {
 </div><div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px"><button id="refresh">Refresh data</button><button id="logout">Sign out</button></div>
 <div class="notice" style="margin-top:16px">Live account data is connected. Trading actions are intentionally not enabled in this first web pass because the repository documents execution and position reconciliation as incomplete. No simulated trade success is shown.</div>
 </section>
+<aside id="support-panel" class="support-panel hidden" aria-label="La-Print support chat" aria-live="polite"><div class="support-head"><div><strong>La-Print Support</strong><small id="support-mode">Help with the bot and dashboard</small></div><button class="support-close" id="support-close" type="button" aria-label="Close support chat">✕</button></div><div id="support-messages" class="support-messages"><div class="support-bubble assistant">Hi! I can help with onboarding, wallets, Manual and Autopilot modes, strategy settings, positions, the dashboard, referrals, and troubleshooting. What do you need help with?</div></div><div class="support-hint">Informational support only. Never send private keys or seed phrases.</div><form id="support-form" class="support-compose"><input id="support-input" maxlength="1200" autocomplete="off" placeholder="Ask a question…" aria-label="Your support question" required><button id="support-send" type="submit">Send</button></form></aside><button id="support-launch" class="support-launch" type="button" aria-expanded="false">💬 Chat with support</button>
 <div class="foot">LA-PRINT V2 · Uses your existing Telegram identity and shared PostgreSQL records.</div></main>
 <script>
 const botUsername = ${JSON.stringify(botUsername)};
@@ -178,6 +181,12 @@ async function loadDashboard(){
 }
 $("refresh").addEventListener("click",()=>loadDashboard().catch(e=>showError(e.message)));
 $("logout").addEventListener("click",async()=>{await fetch("/api/logout",{method:"POST",credentials:"same-origin"});$("app-view").classList.add("hidden");$("login-view").classList.remove("hidden");});
+const supportPanel=$("support-panel"), supportMessages=$("support-messages"), supportInput=$("support-input"), supportForm=$("support-form"), supportSend=$("support-send");
+const supportHistory=[];
+function addSupportBubble(role,text){const bubble=document.createElement("div");bubble.className="support-bubble "+role;bubble.textContent=text;supportMessages.appendChild(bubble);supportMessages.scrollTop=supportMessages.scrollHeight;return bubble;}
+$("support-launch").addEventListener("click",()=>{const open=supportPanel.classList.contains("hidden");supportPanel.classList.toggle("hidden",!open);$("support-launch").setAttribute("aria-expanded",String(open));if(open)supportInput.focus();});
+$("support-close").addEventListener("click",()=>{supportPanel.classList.add("hidden");$("support-launch").setAttribute("aria-expanded","false");});
+supportForm.addEventListener("submit",async(event)=>{event.preventDefault();const message=supportInput.value.trim();if(!message||supportSend.disabled)return;supportInput.value="";addSupportBubble("user",message);supportHistory.push({role:"user",content:message});if(supportHistory.length>8)supportHistory.shift();supportSend.disabled=true;supportInput.disabled=true;const pending=addSupportBubble("assistant","Thinking…");try{const response=await fetch("/api/support-chat",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({message,history:supportHistory.slice(0,-1)})});const data=await response.json();if(!response.ok)throw new Error(data.error||"Support chat is temporarily unavailable.");pending.textContent=data.answer;supportHistory.push({role:"assistant",content:data.answer});if(supportHistory.length>8)supportHistory.splice(0,supportHistory.length-8);$("support-mode").textContent=data.mode==="ai"?"AI support assistant":"Support FAQ assistant";}catch(error){pending.textContent=(error&&error.message)||"I couldn’t send that just now. Please try again, or use Help & Support → Contact Support in Telegram.";}finally{supportSend.disabled=false;supportInput.disabled=false;supportInput.focus();supportMessages.scrollTop=supportMessages.scrollHeight;}});
 if(loginConfigured){const s=document.createElement("script");s.async=true;s.src="https://telegram.org/js/telegram-widget.js?22";s.setAttribute("data-telegram-login",botUsername);s.setAttribute("data-size","large");s.setAttribute("data-radius","10");s.setAttribute("data-userpic","false");s.setAttribute("data-onauth","onTelegramAuth(user)");s.setAttribute("data-request-access","write");$("tg-widget").appendChild(s);}
 loadDashboard().catch(e=>showError(e.message));
 </script></body></html>`;
@@ -189,6 +198,7 @@ export function startWebServer(pool: Pool, bot: any) {
   const botUsername = String(process.env.BOT_USERNAME || "").replace(/^@/, "");
   const secret = sessionSecret();
   const configured = Boolean(botToken && botUsername && secret);
+  const supportRate = new Map<string, number[]>();
   const server = createServer(async (req, res) => {
     const url = new URL(req.url || "/", "http://localhost");
     try {
@@ -197,6 +207,23 @@ export function startWebServer(pool: Pool, bot: any) {
       }
       if (req.method === "GET" && url.pathname === "/") {
         return send(res, 200, page(botUsername, configured), "text/html; charset=utf-8");
+      }
+      if (req.method === "POST" && url.pathname === "/api/support-chat") {
+        const origin = req.headers.origin;
+        const host = String(req.headers["x-forwarded-host"] || req.headers.host || "");
+        if (origin) { let originHost = ""; try { originHost = new URL(origin).host; } catch { return json(res, 403, { error: "Invalid request origin." }); } if (!host || originHost !== host) return json(res, 403, { error: "Cross-origin chat requests are not allowed." }); }
+        const ip = String(req.socket.remoteAddress || "unknown");
+        const now = Date.now();
+        const recent = (supportRate.get(ip) || []).filter((time) => now - time < 60_000);
+        if (recent.length >= 12) return json(res, 429, { error: "You’ve sent several messages. Please wait a minute and try again." });
+        recent.push(now); supportRate.set(ip, recent);
+        if (supportRate.size > 5000) { for (const [key, times] of supportRate) if (!times.some((time) => now - time < 60_000)) supportRate.delete(key); }
+        const input = await readJson(req, 8_192);
+        const message = typeof input?.message === "string" ? input.message.trim() : "";
+        if (!message || message.length > 1200) return json(res, 400, { error: "Please enter a message up to 1,200 characters." });
+        const history: SupportMessage[] = Array.isArray(input.history) ? input.history.slice(-8).filter((item: any) => item && (item.role === "user" || item.role === "assistant") && typeof item.content === "string").map((item: any) => ({ role: item.role, content: item.content.slice(0, 1000) })) : [];
+        const result = await supportChatReply(message, history);
+        return json(res, 200, { answer: result.answer, mode: result.mode });
       }
       if (req.method === "POST" && url.pathname === "/api/auth/telegram") {
         if (!configured) return json(res, 503, { error: "Telegram web sign-in is not configured." });
