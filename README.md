@@ -65,3 +65,10 @@ The same Node process can serve the La-Print web terminal alongside the Telegram
 After deploying, open the service's public URL. Sign in using the same Telegram account that completed La-Print onboarding. The server verifies Telegram's signed login payload and maps the account to the existing `telegram_id`; it never accepts a Telegram ID supplied by the browser as identity. The web API only returns public wallet addresses and account/position settings; encrypted wallet secrets and private keys are never returned to the browser.
 
 **Current scope:** account dashboard plus validated shared strategy edits (profile, buy amount, stop loss, and trailing-stop toggle). Edits use the same strategy save path as Telegram, including strategy versioning and the existing `strategy_changed` admin event. Web buy/sell actions are not enabled yet. The repository documents that automated entry scheduling and position reconciliation are still incomplete, so live web trading must not be enabled until those paths are completed and tested. `src/admin-notifications.ts` is unchanged; the existing wallet notification flow is untouched.
+
+
+## Website support chatbot
+
+The web terminal includes a floating support chat widget. It answers common questions about onboarding, Manual/Autopilot, wallets, strategy and risk settings, positions, the dashboard, referrals, and troubleshooting. The built-in FAQ works without an AI provider. To enable AI-generated replies, configure `OPENAI_API_KEY` in the server environment; optionally set `OPENAI_MODEL` (defaults to `gpt-4o-mini`). Keep the API key server-side and never expose it to browser code.
+
+The support chat is informational only. It cannot execute trades, change account settings, or confirm transaction success. It rate-limits messages and falls back to the local FAQ if the AI provider is unavailable. For account-specific issues, users should use Help & Support → Contact Support in Telegram.
